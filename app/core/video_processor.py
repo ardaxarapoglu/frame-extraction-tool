@@ -49,6 +49,18 @@ class VideoProcessor:
 
         self.progress_callback(100, f"Done. Processed {total} video(s).")
 
+    def process_single(self, video_filename: str):
+        video_path = os.path.join(self.config.video_directory, video_filename)
+        if not os.path.isfile(video_path):
+            self.progress_callback(0, f"Video not found: {video_path}")
+            return
+        self.progress_callback(0, f"Processing {video_filename}...")
+        try:
+            self._process_video(video_path, video_filename)
+        except Exception as e:
+            self.progress_callback(0, f"Error processing {video_filename}: {e}")
+        self.progress_callback(100, f"Done. Processed {video_filename}.")
+
     def _process_video(self, video_path: str, video_filename: str):
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():

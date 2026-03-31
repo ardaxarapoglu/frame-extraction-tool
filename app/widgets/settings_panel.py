@@ -9,6 +9,7 @@ from .time_frame_editor import TimeFrameEditor
 class SettingsPanel(QWidget):
     video_dir_changed = pyqtSignal(str)
     process_requested = pyqtSignal()
+    process_single_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -73,16 +74,31 @@ class SettingsPanel(QWidget):
             "Mark experiment start separately for each video")
         layout.addWidget(self.per_video_check)
 
-        # Process button
+        # Process buttons
+        process_layout = QHBoxLayout()
+
+        self.btn_process_single = QPushButton("▶ Process Selected Video")
+        self.btn_process_single.setStyleSheet(
+            "QPushButton { background-color: #388e3c; color: white; "
+            "font-weight: bold; padding: 10px; font-size: 13px; "
+            "border-radius: 4px; }"
+            "QPushButton:hover { background-color: #2e7d32; }"
+            "QPushButton:disabled { background-color: #90a4ae; }")
+        self.btn_process_single.clicked.connect(
+            self.process_single_requested.emit)
+        process_layout.addWidget(self.btn_process_single)
+
         self.btn_process = QPushButton("▶ Process All Videos")
         self.btn_process.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
-            "font-weight: bold; padding: 10px; font-size: 14px; "
+            "font-weight: bold; padding: 10px; font-size: 13px; "
             "border-radius: 4px; }"
             "QPushButton:hover { background-color: #1565c0; }"
             "QPushButton:disabled { background-color: #90a4ae; }")
         self.btn_process.clicked.connect(self.process_requested.emit)
-        layout.addWidget(self.btn_process)
+        process_layout.addWidget(self.btn_process)
+
+        layout.addLayout(process_layout)
 
         layout.addStretch()
 

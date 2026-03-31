@@ -9,9 +9,10 @@ class ProcessingWorker(QThread):
     finished_processing = pyqtSignal()
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, config: ProjectConfig, parent=None):
+    def __init__(self, config: ProjectConfig, single_video=None, parent=None):
         super().__init__(parent)
         self.config = copy.deepcopy(config)
+        self.single_video = single_video
         self._cancelled = False
 
     def run(self):
@@ -21,7 +22,10 @@ class ProcessingWorker(QThread):
                 progress_callback=self._on_progress,
                 cancel_check=lambda: self._cancelled,
             )
-            processor.process_all()
+            if self.single_video:
+                processor.process_single(self.single_video)
+            else:
+                processor.process_all()
         except Exception as e:
             self.error_occurred.emit(str(e))
         finally:

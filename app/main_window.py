@@ -80,6 +80,8 @@ class MainWindow(QMainWindow):
 
         # Process
         self.settings_panel.process_requested.connect(self._start_processing)
+        self.settings_panel.process_single_requested.connect(
+            self._start_processing_single)
 
         # Cancel
         self.progress_panel.cancel_requested.connect(self._cancel_processing)
@@ -102,7 +104,15 @@ class MainWindow(QMainWindow):
     def _on_crop_applied(self, region: CropRegion):
         self.config.crop_region = region
 
-    def _start_processing(self):
+    def _start_processing_single(self):
+        video_name = self.video_player.get_current_video_name()
+        if not video_name:
+            QMessageBox.warning(self, "No Video",
+                                "No video is currently selected.")
+            return
+        self._start_processing(single_video=video_name)
+
+    def _start_processing(self, single_video=None):
         # Validate
         if not self.config.video_directory:
             QMessageBox.warning(self, "Missing Setting",
@@ -141,8 +151,10 @@ class MainWindow(QMainWindow):
         self.progress_panel.clear_log()
         self.progress_panel.set_processing(True)
         self.settings_panel.btn_process.setEnabled(False)
+        self.settings_panel.btn_process_single.setEnabled(False)
 
-        self.worker = ProcessingWorker(self.config)
+        self.worker = ProcessingWorker(self.config,
+                                       single_video=single_video)
         self.worker.progress_updated.connect(
             self.progress_panel.set_progress)
         self.worker.finished_processing.connect(
@@ -158,6 +170,7 @@ class MainWindow(QMainWindow):
     def _on_processing_finished(self):
         self.progress_panel.set_processing(False)
         self.settings_panel.btn_process.setEnabled(True)
+        self.settings_panel.btn_process_single.setEnabled(True)
         self.progress_panel.set_progress(100, "Processing complete!")
 
     def _on_processing_error(self, error: str):
