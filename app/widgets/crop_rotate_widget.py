@@ -3,7 +3,7 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
     QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-    QGraphicsRectItem, QSizePolicy
+    QGraphicsRectItem, QSizePolicy, QGroupBox
 )
 from PyQt5.QtCore import Qt, QRectF, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QPen, QColor, QBrush
@@ -85,11 +85,12 @@ class CropRotateWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.original_frame = None
-        self.rotated_frame = None
+        self.transformed_frame = None
         self.rotation_angle = 0.0
+        self.perspective_x = 0.0
+        self.perspective_y = 0.0
         self.pixmap_item = None
         self.crop_rect = None
-        self.scale_factor = 1.0
         self._setup_ui()
 
     def _setup_ui(self):
@@ -98,30 +99,66 @@ class CropRotateWidget(QWidget):
         # Graphics view for the frame
         self.scene = QGraphicsScene()
         self.view = QGraphicsView(self.scene)
-        self.view.setRenderHints(
-            self.view.renderHints())
+        self.view.setRenderHints(self.view.renderHints())
         self.view.setDragMode(QGraphicsView.NoDrag)
         self.view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.view, 1)
 
-        # Rotation control
+        # Transform controls group
+        transform_group = QGroupBox("Transform")
+        transform_layout = QVBoxLayout(transform_group)
+
+        # Rotation: -15 to +15 degrees
         rot_layout = QHBoxLayout()
         rot_layout.addWidget(QLabel("Rotation:"))
         self.rotation_slider = QSlider(Qt.Horizontal)
-        self.rotation_slider.setRange(-1800, 1800)
+        self.rotation_slider.setRange(-150, 150)  # -15.0 to +15.0
         self.rotation_slider.setValue(0)
         self.rotation_slider.setTickPosition(QSlider.TicksBelow)
-        self.rotation_slider.setTickInterval(450)
-        self.rotation_slider.valueChanged.connect(self._on_rotation_changed)
+        self.rotation_slider.setTickInterval(50)
+        self.rotation_slider.valueChanged.connect(self._on_transform_changed)
         rot_layout.addWidget(self.rotation_slider)
         self.rotation_label = QLabel("0.0°")
+        self.rotation_label.setMinimumWidth(45)
         rot_layout.addWidget(self.rotation_label)
-        layout.addLayout(rot_layout)
+        transform_layout.addLayout(rot_layout)
+
+        # Perspective X (left-right tilt)
+        px_layout = QHBoxLayout()
+        px_layout.addWidget(QLabel("Tilt L/R:"))
+        self.persp_x_slider = QSlider(Qt.Horizontal)
+        self.persp_x_slider.setRange(-300, 300)  # -30.0 to +30.0
+        self.persp_x_slider.setValue(0)
+        self.persp_x_slider.setTickPosition(QSlider.TicksBelow)
+        self.persp_x_slider.setTickInterval(100)
+        self.persp_x_slider.valueChanged.connect(self._on_transform_changed)
+        px_layout.addWidget(self.persp_x_slider)
+        self.persp_x_label = QLabel("0.0°")
+        self.persp_x_label.setMinimumWidth(45)
+        px_layout.addWidget(self.persp_x_label)
+        transform_layout.addLayout(px_layout)
+
+        # Perspective Y (forward-back tilt)
+        py_layout = QHBoxLayout()
+        py_layout.addWidget(QLabel("Tilt F/B:"))
+        self.persp_y_slider = QSlider(Qt.Horizontal)
+        self.persp_y_slider.setRange(-300, 300)  # -30.0 to +30.0
+        self.persp_y_slider.setValue(0)
+        self.persp_y_slider.setTickPosition(QSlider.TicksBelow)
+        self.persp_y_slider.setTickInterval(100)
+        self.persp_y_slider.valueChanged.connect(self._on_transform_changed)
+        py_layout.addWidget(self.persp_y_slider)
+        self.persp_y_label = QLabel("0.0°")
+        self.persp_y_label.setMinimumWidth(45)
+        py_layout.addWidget(self.persp_y_label)
+        transform_layout.addLayout(py_layout)
+
+        layout.addWidget(transform_group)
 
         # Buttons
         btn_layout = QHBoxLayout()
-        self.btn_reset = QPushButton("Reset Crop")
-        self.btn_reset.clicked.connect(self._reset_crop)
+        self.btn_reset = QPushButton("Reset All")
+        self.btn_reset.clicked.connect(self._reset_all)
         btn_layout.addWidget(self.btn_reset)
 
         self.btn_apply = QPushButton("Apply Crop Region")
@@ -133,18 +170,25 @@ class CropRotateWidget(QWidget):
         btn_layout.addWidget(self.btn_apply)
         layout.addLayout(btn_layout)
 
-        self.status_label = QLabel("Load a video and mark the experiment start to set crop region")
+        self.status_label = QLabel(
+            "Load a video and mark the experiment start to set crop region")
         self.status_label.setStyleSheet("color: gray;")
         layout.addWidget(self.status_label)
 
     def set_frame(self, frame: np.ndarray):
         self.original_frame = frame.copy()
         self.rotation_slider.setValue(0)
+        self.persp_x_slider.setValue(0)
+        self.persp_y_slider.setValue(0)
         self._update_display()
 
-    def _on_rotation_changed(self, value):
-        self.rotation_angle = value / 10.0
+    def _on_transform_changed(self):
+        self.rotation_angle = self.rotation_slider.value() / 10.0
+        self.perspective_x = self.persp_x_slider.value() / 10.0
+        self.perspective_y = self.persp_y_slider.value() / 10.0
         self.rotation_label.setText(f"{self.rotation_angle:.1f}°")
+        self.persp_x_label.setText(f"{self.perspective_x:.1f}°")
+        self.persp_y_label.setText(f"{self.perspective_y:.1f}°")
         self._update_display()
 
     def _update_display(self):
@@ -154,13 +198,16 @@ class CropRotateWidget(QWidget):
         self.scene.clear()
         self.crop_rect = None
 
+        # Apply perspective then rotation
+        frame = self.original_frame.copy()
+        if self.perspective_x != 0 or self.perspective_y != 0:
+            frame = self._apply_perspective(
+                frame, self.perspective_x, self.perspective_y)
         if self.rotation_angle != 0:
-            self.rotated_frame = self._rotate(self.original_frame,
-                                               self.rotation_angle)
-        else:
-            self.rotated_frame = self.original_frame.copy()
+            frame = self._rotate(frame, self.rotation_angle)
+        self.transformed_frame = frame
 
-        rgb = cv2.cvtColor(self.rotated_frame, cv2.COLOR_BGR2RGB)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
         qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(qimg)
@@ -168,7 +215,7 @@ class CropRotateWidget(QWidget):
         self.pixmap_item = self.scene.addPixmap(pixmap)
         self.scene.setSceneRect(0, 0, w, h)
 
-        # Add default crop rect (center 60% of frame)
+        # Default crop rect (center 60%)
         cx, cy = w // 2, h // 2
         rw, rh = int(w * 0.6), int(h * 0.6)
         rx, ry = cx - rw // 2, cy - rh // 2
@@ -180,7 +227,37 @@ class CropRotateWidget(QWidget):
             "Drag the green rectangle to select the froth region. "
             "Drag corners to resize.")
 
-    def _rotate(self, frame: np.ndarray, angle: float) -> np.ndarray:
+    @staticmethod
+    def _apply_perspective(frame, angle_x, angle_y):
+        """Simulate perspective correction by warping.
+        angle_x: left-right tilt correction (positive = right side closer)
+        angle_y: forward-back tilt correction (positive = bottom closer)
+        """
+        h, w = frame.shape[:2]
+
+        # Convert angles to pixel offsets for the warp
+        # Larger angle = more aggressive correction
+        dx = np.tan(np.radians(angle_x)) * w * 0.3
+        dy = np.tan(np.radians(angle_y)) * h * 0.3
+
+        # Source corners: TL, TR, BR, BL
+        src = np.float32([
+            [0, 0], [w, 0], [w, h], [0, h]
+        ])
+
+        # Destination: shift corners to correct perspective
+        dst = np.float32([
+            [0 + dx,  0 + dy],       # TL
+            [w - dx,  0 - dy],       # TR
+            [w + dx,  h + dy],       # BR
+            [0 - dx,  h - dy],       # BL
+        ])
+
+        M = cv2.getPerspectiveTransform(src, dst)
+        return cv2.warpPerspective(frame, M, (w, h))
+
+    @staticmethod
+    def _rotate(frame, angle):
         h, w = frame.shape[:2]
         center = (w / 2, h / 2)
         M = cv2.getRotationMatrix2D(center, angle, 1.0)
@@ -192,14 +269,16 @@ class CropRotateWidget(QWidget):
         M[1, 2] += (new_h - h) / 2
         return cv2.warpAffine(frame, M, (new_w, new_h))
 
-    def _reset_crop(self):
+    def _reset_all(self):
+        self.rotation_slider.setValue(0)
+        self.persp_x_slider.setValue(0)
+        self.persp_y_slider.setValue(0)
         self._update_display()
 
     def _apply_crop(self):
         if self.crop_rect is None:
             return
 
-        # Get rect in scene coordinates
         scene_rect = self.crop_rect.mapRectToScene(self.crop_rect.rect())
         x = int(scene_rect.x())
         y = int(scene_rect.y())
@@ -211,12 +290,19 @@ class CropRotateWidget(QWidget):
             y=max(0, y),
             w=max(1, w),
             h=max(1, h),
-            rotation_angle=self.rotation_angle
+            rotation_angle=self.rotation_angle,
+            perspective_x=self.perspective_x,
+            perspective_y=self.perspective_y,
         )
         self.crop_applied.emit(region)
-        self.status_label.setText(
-            f"Crop region set: ({region.x}, {region.y}) "
-            f"{region.w}x{region.h}, rotation {region.rotation_angle:.1f}°")
+        parts = [f"({region.x}, {region.y}) {region.w}x{region.h}"]
+        if region.rotation_angle != 0:
+            parts.append(f"rot {region.rotation_angle:.1f}°")
+        if region.perspective_x != 0 or region.perspective_y != 0:
+            parts.append(
+                f"persp ({region.perspective_x:.1f}°, "
+                f"{region.perspective_y:.1f}°)")
+        self.status_label.setText("Crop region set: " + ", ".join(parts))
         self.status_label.setStyleSheet("color: #388e3c; font-weight: bold;")
 
     def resizeEvent(self, event):

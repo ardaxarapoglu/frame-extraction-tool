@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import os
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Tuple
 
 from .models import ProjectConfig, TimeFrame, CropRegion
 from .tracker import ROITracker
@@ -79,7 +79,6 @@ class VideoProcessor:
             f"  Video info: {width}x{height}, {fps:.1f} FPS, "
             f"{total_frames} frames, {duration_s:.1f}s")
 
-        # Determine start time for this video
         if self.config.per_video_start and video_filename in self.config.video_start_marks:
             start_ms = self.config.video_start_marks[video_filename]
         else:
@@ -90,9 +89,13 @@ class VideoProcessor:
 
         if self.config.crop_region:
             cr = self.config.crop_region
+            persp_info = ""
+            if cr.perspective_x != 0 or cr.perspective_y != 0:
+                persp_info = (f", perspective ({cr.perspective_x:.1f}°, "
+                              f"{cr.perspective_y:.1f}°)")
             self.progress_callback(0,
                 f"  Crop region: ({cr.x}, {cr.y}) {cr.w}x{cr.h}, "
-                f"rotation {cr.rotation_angle:.1f} deg")
+                f"rotation {cr.rotation_angle:.1f} deg{persp_info}")
         else:
             self.progress_callback(0, "  No crop region set, using full frames")
 
@@ -111,12 +114,16 @@ class VideoProcessor:
                 f"  Clip range: {clip_start_s:.2f}s - {clip_end_s:.2f}s "
                 f"(duration: {tf.duration_seconds}s)")
 
-            self.progress_callback(0, f"  Extracting raw frames...")
-            frames, timestamps = self._extract_clip_frames(
+            self.progress_callback(0,
+                f"  Streaming frames (crop + track)...")
+            cropped_frames, timestamps = self._stream_clip(
                 cap, fps, current_ms, tf.duration_seconds,
                 skip_first=(tf_idx > 0))
 
-            if not frames:
+            if self.cancel_check():
+                break
+
+            if not cropped_frames:
                 self.progress_callback(0,
                     f"  WARNING: No frames extracted for '{tf.name}' "
                     f"- clip may be beyond video end")
@@ -124,13 +131,7 @@ class VideoProcessor:
                 continue
 
             self.progress_callback(0,
-                f"  Extracted {len(frames)} raw frames")
-
-            # Apply rotation and cropping with tracking
-            self.progress_callback(0, f"  Applying crop & tracking...")
-            cropped_frames = self._crop_and_track(frames)
-            self.progress_callback(0,
-                f"  Cropped {len(cropped_frames)} frames"
+                f"  Got {len(cropped_frames)} cropped frames"
                 + (f" (size: {cropped_frames[0].shape[1]}x"
                    f"{cropped_frames[0].shape[0]})"
                    if cropped_frames else ""))
@@ -183,77 +184,100 @@ class VideoProcessor:
             self.progress_callback(0, f"  Finished {video_filename}")
         cap.release()
 
-    def _extract_clip_frames(self, cap: cv2.VideoCapture, fps: float,
-                             start_ms: float, duration_s: float,
-                             skip_first: bool = False):
-        frames = []
+    def _stream_clip(self, cap: cv2.VideoCapture, fps: float,
+                     start_ms: float, duration_s: float,
+                     skip_first: bool = False):
+        """Read frames one at a time, rotate+crop immediately, only keep
+        the small cropped result. Never holds full-resolution frames in memory."""
+        crop = self.config.crop_region
+        cropped_frames = []
         timestamps = []
+
         cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)
         end_ms = start_ms + duration_s * 1000
+
+        tracker = None
+        bbox = None
+        if crop:
+            tracker = ROITracker()
+            bbox = (crop.x, crop.y, crop.w, crop.h)
+
         first = True
+        frame_count = 0
+        expected = int(duration_s * fps)
+        log_interval = max(1, expected // 5)
+
         while True:
             if self.cancel_check():
                 break
             pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
             if pos_ms >= end_ms:
                 break
-            ret, frame = cap.read()
+            ret, raw_frame = cap.read()
             if not ret:
                 break
             if first and skip_first:
                 first = False
                 continue
             first = False
-            frames.append(frame)
-            timestamps.append(pos_ms)
-        return frames, timestamps
 
-    def _crop_and_track(self, frames: List[np.ndarray]) -> List[np.ndarray]:
-        crop = self.config.crop_region
-        if crop is None:
-            return frames
-
-        cropped = []
-        tracker = ROITracker()
-        first_frame = frames[0]
-
-        # Apply rotation to get the working frame
-        if crop.rotation_angle != 0:
-            first_rotated = self._rotate_frame(first_frame, crop.rotation_angle)
-        else:
-            first_rotated = first_frame
-
-        bbox = (crop.x, crop.y, crop.w, crop.h)
-        tracker.init(first_rotated, bbox)
-
-        for i, frame in enumerate(frames):
-            if self.cancel_check():
-                break
-            if crop.rotation_angle != 0:
+            # Apply perspective then rotation (on single frame, discard raw)
+            frame = raw_frame
+            if crop and (crop.perspective_x != 0 or crop.perspective_y != 0):
+                frame = self._perspective_warp(
+                    frame, crop.perspective_x, crop.perspective_y)
+            if crop and crop.rotation_angle != 0:
                 frame = self._rotate_frame(frame, crop.rotation_angle)
+            raw_frame = None
 
-            if i == 0:
-                current_bbox = bbox
+            # Crop with tracking
+            if crop and tracker:
+                if frame_count == 0:
+                    tracker.init(frame, bbox)
+                    current_bbox = bbox
+                else:
+                    _, current_bbox = tracker.update(frame)
+
+                x, y, w, h = current_bbox
+                fh, fw = frame.shape[:2]
+                x = max(0, min(x, fw - 1))
+                y = max(0, min(y, fh - 1))
+                w = min(w, fw - x)
+                h = min(h, fh - y)
+                crop_img = frame[y:y + h, x:x + w].copy()
+                # Free the full rotated frame
+                frame = None
+                cropped_frames.append(crop_img)
             else:
-                _, current_bbox = tracker.update(frame)
+                cropped_frames.append(frame)
 
-            x, y, w, h = current_bbox
-            # Clamp to frame boundaries
-            fh, fw = frame.shape[:2]
-            x = max(0, min(x, fw - 1))
-            y = max(0, min(y, fh - 1))
-            w = min(w, fw - x)
-            h = min(h, fh - y)
+            timestamps.append(pos_ms)
+            frame_count += 1
 
-            crop_img = frame[y:y + h, x:x + w]
-            if crop_img.size > 0:
-                cropped.append(crop_img)
-            else:
-                cropped.append(frame)
+            if frame_count % log_interval == 0:
+                self.progress_callback(0,
+                    f"    {frame_count}/{expected} frames processed...")
 
-        return cropped
+        return cropped_frames, timestamps
 
-    def _rotate_frame(self, frame: np.ndarray, angle: float) -> np.ndarray:
+    @staticmethod
+    def _perspective_warp(frame: np.ndarray,
+                          angle_x: float, angle_y: float) -> np.ndarray:
+        h, w = frame.shape[:2]
+        dx = np.tan(np.radians(angle_x)) * w * 0.3
+        dy = np.tan(np.radians(angle_y)) * h * 0.3
+        src = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+        dst = np.float32([
+            [0 + dx, 0 + dy],
+            [w - dx, 0 - dy],
+            [w + dx, h + dy],
+            [0 - dx, h - dy],
+        ])
+        M = cv2.getPerspectiveTransform(src, dst)
+        return cv2.warpPerspective(frame, M, (w, h))
+
+    @staticmethod
+    def _rotate_frame(frame: np.ndarray, angle: float) -> np.ndarray:
         h, w = frame.shape[:2]
         center = (w / 2, h / 2)
         M = cv2.getRotationMatrix2D(center, angle, 1.0)

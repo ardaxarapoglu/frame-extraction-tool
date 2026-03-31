@@ -8,7 +8,7 @@ def generate_filename(scheme: str, video_name: str, timeframe_name: str,
         name = scheme.format(
             video=base,
             name=timeframe_name,
-            index=index,
+            index=index + 1,
             timestamp=int(timestamp_ms),
         )
     except (KeyError, IndexError, ValueError):

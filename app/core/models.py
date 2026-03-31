@@ -17,6 +17,9 @@ class CropRegion:
     w: int = 100
     h: int = 100
     rotation_angle: float = 0.0
+    # Perspective tilt correction (degrees, applied before rotation/crop)
+    perspective_x: float = 0.0  # left-right tilt
+    perspective_y: float = 0.0  # forward-back tilt
 
 
 @dataclass

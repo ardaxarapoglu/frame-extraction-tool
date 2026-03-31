@@ -110,66 +110,15 @@ class MainWindow(QMainWindow):
         self.config.crop_region = region
 
     def _test_obstruction(self):
-        import cv2
-        # Grab ~3 seconds of frames from current video position
         cap = self.video_player.cap
         if cap is None or not cap.isOpened():
             QMessageBox.warning(self, "No Video",
                                 "Open a video first.")
             return
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        # Save and restore position
-        saved_pos = cap.get(cv2.CAP_PROP_POS_FRAMES)
-        # Sample ~3 seconds, every 3rd frame to keep it quick
-        sample_count = int(fps * 3)
-        frames = []
-        for _ in range(sample_count):
-            ret, frame = cap.read()
-            if not ret:
-                break
-            frames.append(frame)
-        # Restore position
-        cap.set(cv2.CAP_PROP_POS_FRAMES, saved_pos)
-
-        if not frames:
-            QMessageBox.warning(self, "No Frames",
-                                "Could not read frames from current position.")
-            return
-
-        # Apply crop if set
-        crop = self.config.crop_region
-        if crop:
-            cropped = []
-            for frame in frames:
-                if crop.rotation_angle != 0:
-                    h, w = frame.shape[:2]
-                    center = (w / 2, h / 2)
-                    M = cv2.getRotationMatrix2D(center, crop.rotation_angle, 1.0)
-                    cos_a, sin_a = abs(M[0, 0]), abs(M[0, 1])
-                    new_w = int(h * sin_a + w * cos_a)
-                    new_h = int(h * cos_a + w * sin_a)
-                    M[0, 2] += (new_w - w) / 2
-                    M[1, 2] += (new_h - h) / 2
-                    frame = cv2.warpAffine(frame, M, (new_w, new_h))
-                x, y, cw, ch = crop.x, crop.y, crop.w, crop.h
-                fh, fw = frame.shape[:2]
-                x = max(0, min(x, fw - 1))
-                y = max(0, min(y, fh - 1))
-                cw = min(cw, fw - x)
-                ch = min(ch, fh - y)
-                cropped.append(frame[y:y + ch, x:x + cw])
-            frames = cropped
-
-        # Take every 3rd frame to keep the dialog snappy
-        frames = frames[::3]
-        if not frames:
-            QMessageBox.warning(self, "No Frames",
-                                "No frames after cropping.")
-            return
-
         sensitivity = self.settings_panel.get_sensitivity()
-        dlg = ObstructionTestDialog(frames, sensitivity, self)
+        dlg = ObstructionTestDialog(
+            cap, self.config.crop_region, sensitivity, self)
         if dlg.exec_() == QDialog.Accepted:
             new_sens = dlg.get_sensitivity()
             self.settings_panel.sensitivity_slider.setValue(

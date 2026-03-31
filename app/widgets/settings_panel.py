@@ -1,8 +1,10 @@
+import json
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFileDialog, QSlider, QGroupBox, QCheckBox
+    QPushButton, QFileDialog, QSlider, QGroupBox, QCheckBox,
+    QComboBox, QInputDialog, QMessageBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QSettings
 from .time_frame_editor import TimeFrameEditor
 
 
@@ -94,6 +96,33 @@ class SettingsPanel(QWidget):
             "Mark experiment start separately for each video")
         layout.addWidget(self.per_video_check)
 
+        # Presets
+        preset_group = QGroupBox("Presets")
+        preset_layout = QVBoxLayout(preset_group)
+
+        preset_select_layout = QHBoxLayout()
+        self.preset_combo = QComboBox()
+        self.preset_combo.setPlaceholderText("Select a preset...")
+        preset_select_layout.addWidget(self.preset_combo, 1)
+
+        self.btn_load_preset = QPushButton("Load")
+        self.btn_load_preset.clicked.connect(self._load_preset)
+        preset_select_layout.addWidget(self.btn_load_preset)
+        preset_layout.addLayout(preset_select_layout)
+
+        preset_btn_layout = QHBoxLayout()
+        self.btn_save_preset = QPushButton("Save Current Settings")
+        self.btn_save_preset.clicked.connect(self._save_preset)
+        preset_btn_layout.addWidget(self.btn_save_preset)
+
+        self.btn_delete_preset = QPushButton("Delete")
+        self.btn_delete_preset.clicked.connect(self._delete_preset)
+        preset_btn_layout.addWidget(self.btn_delete_preset)
+        preset_layout.addLayout(preset_btn_layout)
+
+        layout.addWidget(preset_group)
+        self._refresh_preset_list()
+
         # Process buttons
         process_layout = QHBoxLayout()
 
@@ -150,3 +179,100 @@ class SettingsPanel(QWidget):
 
     def is_per_video(self) -> bool:
         return self.per_video_check.isChecked()
+
+    def _get_settings(self):
+        return QSettings("FrothExtractor", "FrothFrameExtractor")
+
+    def _refresh_preset_list(self):
+        self.preset_combo.clear()
+        settings = self._get_settings()
+        settings.beginGroup("presets")
+        names = settings.childKeys()
+        settings.endGroup()
+        for name in sorted(names):
+            self.preset_combo.addItem(name)
+
+    def _save_preset(self):
+        name, ok = QInputDialog.getText(
+            self, "Save Preset", "Preset name:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+
+        # Gather current settings
+        time_frames = []
+        for tf in self.time_frame_editor.get_time_frames():
+            time_frames.append({
+                "name": tf.name,
+                "duration_seconds": tf.duration_seconds,
+                "num_frames": tf.num_frames,
+                "naming_scheme": tf.naming_scheme,
+            })
+
+        preset = {
+            "time_frames": time_frames,
+            "obstruction_enabled": self.obstruction_enabled_check.isChecked(),
+            "obstruction_sensitivity": self.sensitivity_slider.value(),
+            "per_video_start": self.per_video_check.isChecked(),
+        }
+
+        settings = self._get_settings()
+        settings.setValue(f"presets/{name}", json.dumps(preset))
+        self._refresh_preset_list()
+
+        # Select the saved preset
+        idx = self.preset_combo.findText(name)
+        if idx >= 0:
+            self.preset_combo.setCurrentIndex(idx)
+
+    def _load_preset(self):
+        name = self.preset_combo.currentText()
+        if not name:
+            return
+
+        settings = self._get_settings()
+        data = settings.value(f"presets/{name}")
+        if not data:
+            return
+
+        try:
+            preset = json.loads(data)
+        except (json.JSONDecodeError, TypeError):
+            QMessageBox.warning(self, "Error", "Could not load preset data.")
+            return
+
+        # Apply time frames
+        from ..core.models import TimeFrame
+        tfs = []
+        for tf_data in preset.get("time_frames", []):
+            tfs.append(TimeFrame(
+                name=tf_data.get("name", "Phase1"),
+                duration_seconds=tf_data.get("duration_seconds", 30.0),
+                num_frames=tf_data.get("num_frames", 5),
+                naming_scheme=tf_data.get("naming_scheme",
+                                          "{video}_{name}_{index:03d}"),
+            ))
+        self.time_frame_editor.set_time_frames(tfs)
+
+        # Apply obstruction settings
+        self.obstruction_enabled_check.setChecked(
+            preset.get("obstruction_enabled", True))
+        self.sensitivity_slider.setValue(
+            preset.get("obstruction_sensitivity", 35))
+
+        # Apply per-video start
+        self.per_video_check.setChecked(
+            preset.get("per_video_start", False))
+
+    def _delete_preset(self):
+        name = self.preset_combo.currentText()
+        if not name:
+            return
+        reply = QMessageBox.question(
+            self, "Delete Preset",
+            f"Delete preset '{name}'?",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            settings = self._get_settings()
+            settings.remove(f"presets/{name}")
+            self._refresh_preset_list()
