@@ -3,6 +3,16 @@ import numpy as np
 from typing import Tuple, Optional
 
 
+def _create_tracker():
+    # Try trackers in order of preference
+    if hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerCSRT_create'):
+        return cv2.legacy.TrackerCSRT_create()
+    if hasattr(cv2, 'TrackerCSRT_create'):
+        return cv2.TrackerCSRT_create()
+    # Fall back to TrackerMIL which is always available
+    return cv2.TrackerMIL_create()
+
+
 class ROITracker:
     def __init__(self, max_failures: int = 30):
         self.tracker = None
@@ -15,7 +25,7 @@ class ROITracker:
         self.initial_bbox = bbox
         self.last_good_bbox = bbox
         self.consecutive_failures = 0
-        self.tracker = cv2.legacy.TrackerCSRT_create()
+        self.tracker = _create_tracker()
         self.tracker.init(frame, bbox)
 
     def update(self, frame: np.ndarray) -> Tuple[bool, Tuple[int, int, int, int]]:
@@ -35,7 +45,7 @@ class ROITracker:
             return False, self.last_good_bbox
 
     def _reinit(self, frame: np.ndarray):
-        self.tracker = cv2.legacy.TrackerCSRT_create()
+        self.tracker = _create_tracker()
         self.tracker.init(frame, self.last_good_bbox)
         self.consecutive_failures = 0
 
