@@ -91,6 +91,17 @@ class SettingsPanel(QWidget):
         obs_layout.addWidget(self.obs_controls_widget)
         layout.addWidget(obs_group)
 
+        # Tracking toggle
+        self.tracking_enabled_check = QCheckBox(
+            "Track crop region for camera movement")
+        self.tracking_enabled_check.setChecked(True)
+        layout.addWidget(self.tracking_enabled_check)
+
+        # Debug: save unfiltered frames
+        self.save_unfiltered_check = QCheckBox(
+            "Save all frames before obstruction filtering (debug)")
+        layout.addWidget(self.save_unfiltered_check)
+
         # Per-video marking option
         self.per_video_check = QCheckBox(
             "Mark experiment start separately for each video")
@@ -176,6 +187,12 @@ class SettingsPanel(QWidget):
 
     def _on_obstruction_toggled(self, enabled: bool):
         self.obs_controls_widget.setEnabled(enabled)
+
+    def is_tracking_enabled(self) -> bool:
+        return self.tracking_enabled_check.isChecked()
+
+    def is_save_unfiltered(self) -> bool:
+        return self.save_unfiltered_check.isChecked()
 
     def is_per_video(self) -> bool:
         return self.per_video_check.isChecked()

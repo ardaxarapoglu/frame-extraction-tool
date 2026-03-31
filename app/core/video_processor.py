@@ -136,6 +136,26 @@ class VideoProcessor:
                    f"{cropped_frames[0].shape[0]})"
                    if cropped_frames else ""))
 
+            # Save unfiltered frames for debugging
+            if self.config.save_unfiltered:
+                unfiltered_dir = os.path.join(
+                    self.config.output_directory, tf.name, "_unfiltered")
+                os.makedirs(unfiltered_dir, exist_ok=True)
+                self.progress_callback(0,
+                    f"  Saving {len(cropped_frames)} unfiltered frames "
+                    f"to {unfiltered_dir}")
+                for ui, uf in enumerate(cropped_frames):
+                    if self.cancel_check():
+                        break
+                    upath = os.path.join(
+                        unfiltered_dir,
+                        f"{os.path.splitext(video_filename)[0]}"
+                        f"_{tf.name}_{ui + 1:04d}.png")
+                    cv2.imwrite(upath, uf)
+
+            if self.cancel_check():
+                break
+
             # Detect obstructions
             if self.config.obstruction_enabled:
                 self.progress_callback(0,
@@ -196,11 +216,13 @@ class VideoProcessor:
         cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)
         end_ms = start_ms + duration_s * 1000
 
+        use_tracking = crop and self.config.tracking_enabled
         tracker = None
         bbox = None
         if crop:
-            tracker = ROITracker()
             bbox = (crop.x, crop.y, crop.w, crop.h)
+            if use_tracking:
+                tracker = ROITracker()
 
         first = True
         frame_count = 0
@@ -230,13 +252,16 @@ class VideoProcessor:
                 frame = self._rotate_frame(frame, crop.rotation_angle)
             raw_frame = None
 
-            # Crop with tracking
-            if crop and tracker:
-                if frame_count == 0:
-                    tracker.init(frame, bbox)
-                    current_bbox = bbox
+            # Crop (with or without tracking)
+            if crop:
+                if use_tracking and tracker:
+                    if frame_count == 0:
+                        tracker.init(frame, bbox)
+                        current_bbox = bbox
+                    else:
+                        _, current_bbox = tracker.update(frame)
                 else:
-                    _, current_bbox = tracker.update(frame)
+                    current_bbox = bbox
 
                 x, y, w, h = current_bbox
                 fh, fw = frame.shape[:2]

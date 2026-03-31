@@ -53,11 +53,11 @@ class MainWindow(QMainWindow):
         self.crop_widget = CropRotateWidget()
         self.tabs.addTab(self.crop_widget, "Crop && Rotate")
 
-        right_layout.addWidget(self.tabs, 1)
-
-        # Progress panel at bottom
+        # Tab 3: Processing Log
         self.progress_panel = ProgressPanel()
-        right_layout.addWidget(self.progress_panel)
+        self.tabs.addTab(self.progress_panel, "Processing Log")
+
+        right_layout.addWidget(self.tabs, 1)
 
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 0)
@@ -167,11 +167,14 @@ class MainWindow(QMainWindow):
             self.settings_panel.is_obstruction_enabled()
         self.config.obstruction_sensitivity = \
             self.settings_panel.get_sensitivity()
+        self.config.tracking_enabled = self.settings_panel.is_tracking_enabled()
+        self.config.save_unfiltered = self.settings_panel.is_save_unfiltered()
         self.config.per_video_start = self.settings_panel.is_per_video()
 
         # Start worker
         self.progress_panel.clear_log()
         self.progress_panel.set_processing(True)
+        self.tabs.setCurrentIndex(2)  # Switch to Processing Log tab
         self.settings_panel.btn_process.setEnabled(False)
         self.settings_panel.btn_process_single.setEnabled(False)
 

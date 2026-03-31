@@ -32,7 +32,7 @@ class ProgressPanel(QWidget):
         # Log
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(150)
+        self.log_text.setSizePolicy(self.log_text.sizePolicy())  # no height limit
         self.log_text.setStyleSheet(
             "QTextEdit { background-color: #1e1e1e; color: #d4d4d4; "
             "font-family: Consolas, monospace; font-size: 11px; }")
