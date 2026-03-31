@@ -70,6 +70,14 @@ class VideoProcessor:
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0:
             fps = 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration_s = total_frames / fps
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        self.progress_callback(0,
+            f"  Video info: {width}x{height}, {fps:.1f} FPS, "
+            f"{total_frames} frames, {duration_s:.1f}s")
 
         # Determine start time for this video
         if self.config.per_video_start and video_filename in self.config.video_start_marks:
@@ -77,37 +85,91 @@ class VideoProcessor:
         else:
             start_ms = self.config.experiment_start_ms
 
+        self.progress_callback(0,
+            f"  Experiment start: {start_ms / 1000:.2f}s")
+
+        if self.config.crop_region:
+            cr = self.config.crop_region
+            self.progress_callback(0,
+                f"  Crop region: ({cr.x}, {cr.y}) {cr.w}x{cr.h}, "
+                f"rotation {cr.rotation_angle:.1f} deg")
+        else:
+            self.progress_callback(0, "  No crop region set, using full frames")
+
         current_ms = start_ms
 
         for tf_idx, tf in enumerate(self.config.time_frames):
             if self.cancel_check():
                 break
 
-            self.progress_callback(
-                0, f"  {video_filename}: extracting '{tf.name}' "
-                   f"({tf_idx + 1}/{len(self.config.time_frames)})")
+            clip_start_s = current_ms / 1000
+            clip_end_s = clip_start_s + tf.duration_seconds
+            self.progress_callback(0,
+                f"  --- Time frame '{tf.name}' ({tf_idx + 1}/"
+                f"{len(self.config.time_frames)}) ---")
+            self.progress_callback(0,
+                f"  Clip range: {clip_start_s:.2f}s - {clip_end_s:.2f}s "
+                f"(duration: {tf.duration_seconds}s)")
 
+            self.progress_callback(0, f"  Extracting raw frames...")
             frames, timestamps = self._extract_clip_frames(
-                cap, fps, current_ms, tf.duration_seconds)
+                cap, fps, current_ms, tf.duration_seconds,
+                skip_first=(tf_idx > 0))
 
             if not frames:
-                self.progress_callback(0, f"  No frames extracted for '{tf.name}'")
+                self.progress_callback(0,
+                    f"  WARNING: No frames extracted for '{tf.name}' "
+                    f"- clip may be beyond video end")
                 current_ms += tf.duration_seconds * 1000
                 continue
 
+            self.progress_callback(0,
+                f"  Extracted {len(frames)} raw frames")
+
             # Apply rotation and cropping with tracking
+            self.progress_callback(0, f"  Applying crop & tracking...")
             cropped_frames = self._crop_and_track(frames)
+            self.progress_callback(0,
+                f"  Cropped {len(cropped_frames)} frames"
+                + (f" (size: {cropped_frames[0].shape[1]}x"
+                   f"{cropped_frames[0].shape[0]})"
+                   if cropped_frames else ""))
 
             # Detect obstructions
-            detector = ObstructionDetector(sensitivity=self.config.obstruction_sensitivity)
-            good_indices = detector.filter_frames(cropped_frames)
+            if self.config.obstruction_enabled:
+                self.progress_callback(0,
+                    f"  Running obstruction detection "
+                    f"(sensitivity: {self.config.obstruction_sensitivity:.2f})...")
+                detector = ObstructionDetector(
+                    sensitivity=self.config.obstruction_sensitivity)
+                good_indices = detector.filter_frames(
+                    cropped_frames, cancel_check=self.cancel_check)
+                if self.cancel_check():
+                    break
+                rejected = len(cropped_frames) - len(good_indices)
+                self.progress_callback(0,
+                    f"  Obstruction filter: {len(good_indices)} good, "
+                    f"{rejected} rejected")
+            else:
+                self.progress_callback(0, "  Obstruction detection: disabled")
+                good_indices = list(range(len(cropped_frames)))
 
-            self.progress_callback(
-                0, f"  '{tf.name}': {len(good_indices)}/{len(cropped_frames)} "
-                   f"frames passed obstruction filter")
+            if self.cancel_check():
+                break
 
             # Select evenly spaced frames
             selected = select_frames(good_indices, tf.num_frames)
+            if len(good_indices) > 0 and tf.num_frames > 0:
+                interval = len(good_indices) / max(tf.num_frames, 1)
+                self.progress_callback(0,
+                    f"  Selecting {len(selected)}/{tf.num_frames} requested "
+                    f"frames (interval: every {interval:.1f} good frames)")
+            else:
+                self.progress_callback(0,
+                    f"  No frames available to select")
+
+            if self.cancel_check():
+                break
 
             # Save frames
             self._save_frames(cropped_frames, selected, timestamps,
@@ -115,21 +177,33 @@ class VideoProcessor:
 
             current_ms += tf.duration_seconds * 1000
 
+        if self.cancel_check():
+            self.progress_callback(0, f"  Cancelled processing {video_filename}")
+        else:
+            self.progress_callback(0, f"  Finished {video_filename}")
         cap.release()
 
     def _extract_clip_frames(self, cap: cv2.VideoCapture, fps: float,
-                             start_ms: float, duration_s: float):
+                             start_ms: float, duration_s: float,
+                             skip_first: bool = False):
         frames = []
         timestamps = []
         cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)
         end_ms = start_ms + duration_s * 1000
+        first = True
         while True:
+            if self.cancel_check():
+                break
             pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
             if pos_ms >= end_ms:
                 break
             ret, frame = cap.read()
             if not ret:
                 break
+            if first and skip_first:
+                first = False
+                continue
+            first = False
             frames.append(frame)
             timestamps.append(pos_ms)
         return frames, timestamps
@@ -153,6 +227,8 @@ class VideoProcessor:
         tracker.init(first_rotated, bbox)
 
         for i, frame in enumerate(frames):
+            if self.cancel_check():
+                break
             if crop.rotation_angle != 0:
                 frame = self._rotate_frame(frame, crop.rotation_angle)
 
@@ -193,14 +269,22 @@ class VideoProcessor:
                      timestamps: List[float], video_filename: str, tf: TimeFrame):
         out_dir = os.path.join(self.config.output_directory, tf.name)
         os.makedirs(out_dir, exist_ok=True)
+        self.progress_callback(0, f"  Saving to: {out_dir}")
 
         for save_idx, frame_idx in enumerate(selected_indices):
+            if self.cancel_check():
+                self.progress_callback(0, "  Save interrupted by cancel")
+                return
             if frame_idx < len(frames):
                 ts = timestamps[frame_idx] if frame_idx < len(timestamps) else 0.0
                 filename = generate_filename(
                     tf.naming_scheme, video_filename, tf.name, save_idx, ts)
                 filepath = os.path.join(out_dir, filename)
                 cv2.imwrite(filepath, frames[frame_idx])
+                h, w = frames[frame_idx].shape[:2]
+                self.progress_callback(0,
+                    f"    [{save_idx + 1}/{len(selected_indices)}] "
+                    f"{filename} ({w}x{h}, t={ts / 1000:.2f}s)")
 
-        self.progress_callback(
-            0, f"  Saved {len(selected_indices)} frames for '{tf.name}'")
+        self.progress_callback(0,
+            f"  Saved {len(selected_indices)} frames for '{tf.name}'")

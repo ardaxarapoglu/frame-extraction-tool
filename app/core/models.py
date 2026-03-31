@@ -26,6 +26,7 @@ class ProjectConfig:
     time_frames: List[TimeFrame] = field(default_factory=list)
     experiment_start_ms: float = 0.0
     crop_region: Optional[CropRegion] = None
+    obstruction_enabled: bool = True
     obstruction_sensitivity: float = 0.35
     per_video_start: bool = False
     video_start_marks: dict = field(default_factory=dict)

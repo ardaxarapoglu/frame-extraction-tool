@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QProgressBar,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel
 )
 from PyQt5.QtCore import pyqtSignal
@@ -29,12 +29,6 @@ class ProgressPanel(QWidget):
         header.addWidget(self.btn_cancel)
         layout.addLayout(header)
 
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
-
         # Log
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
@@ -45,8 +39,6 @@ class ProgressPanel(QWidget):
         layout.addWidget(self.log_text)
 
     def set_progress(self, value: int, message: str):
-        if value > 0:
-            self.progress_bar.setValue(value)
         self.log_text.append(message)
         self.log_text.verticalScrollBar().setValue(
             self.log_text.verticalScrollBar().maximum())
@@ -56,14 +48,9 @@ class ProgressPanel(QWidget):
         self.btn_cancel.setEnabled(active)
         if active:
             self.status_label.setText("Processing...")
-            self.progress_bar.setValue(0)
         else:
-            if self.progress_bar.value() >= 100:
-                self.status_label.setText("Complete")
-            else:
-                self.status_label.setText("Ready")
+            self.status_label.setText("Ready")
 
     def clear_log(self):
         self.log_text.clear()
-        self.progress_bar.setValue(0)
         self.status_label.setText("Ready")

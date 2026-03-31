@@ -10,6 +10,7 @@ class SettingsPanel(QWidget):
     video_dir_changed = pyqtSignal(str)
     process_requested = pyqtSignal()
     process_single_requested = pyqtSignal()
+    test_obstruction_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,6 +54,15 @@ class SettingsPanel(QWidget):
         obs_group = QGroupBox("Obstruction Detection")
         obs_layout = QVBoxLayout(obs_group)
 
+        self.obstruction_enabled_check = QCheckBox("Enable obstruction detection")
+        self.obstruction_enabled_check.setChecked(True)
+        self.obstruction_enabled_check.toggled.connect(self._on_obstruction_toggled)
+        obs_layout.addWidget(self.obstruction_enabled_check)
+
+        self.obs_controls_widget = QWidget()
+        obs_controls_layout = QVBoxLayout(self.obs_controls_widget)
+        obs_controls_layout.setContentsMargins(0, 0, 0, 0)
+
         slider_layout = QHBoxLayout()
         slider_layout.addWidget(QLabel("Sensitivity:"))
         self.sensitivity_slider = QSlider(Qt.Horizontal)
@@ -65,8 +75,18 @@ class SettingsPanel(QWidget):
         self.sensitivity_slider.valueChanged.connect(
             lambda v: self.sensitivity_label.setText(f"{v / 100:.2f}"))
         slider_layout.addWidget(self.sensitivity_label)
-        obs_layout.addLayout(slider_layout)
+        obs_controls_layout.addLayout(slider_layout)
 
+        self.btn_test_obstruction = QPushButton("Test Obstruction Detection...")
+        self.btn_test_obstruction.setStyleSheet(
+            "QPushButton { background-color: #f57c00; color: white; "
+            "font-weight: bold; padding: 6px 12px; border-radius: 4px; }"
+            "QPushButton:hover { background-color: #e65100; }")
+        self.btn_test_obstruction.clicked.connect(
+            self.test_obstruction_requested.emit)
+        obs_controls_layout.addWidget(self.btn_test_obstruction)
+
+        obs_layout.addWidget(self.obs_controls_widget)
         layout.addWidget(obs_group)
 
         # Per-video marking option
@@ -121,6 +141,12 @@ class SettingsPanel(QWidget):
 
     def get_sensitivity(self) -> float:
         return self.sensitivity_slider.value() / 100.0
+
+    def is_obstruction_enabled(self) -> bool:
+        return self.obstruction_enabled_check.isChecked()
+
+    def _on_obstruction_toggled(self, enabled: bool):
+        self.obs_controls_widget.setEnabled(enabled)
 
     def is_per_video(self) -> bool:
         return self.per_video_check.isChecked()

@@ -1,7 +1,7 @@
 import numpy as np
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QSplitter, QMessageBox, QTabWidget
+    QSplitter, QMessageBox, QTabWidget, QDialog
 )
 from PyQt5.QtCore import Qt
 
@@ -10,6 +10,7 @@ from .widgets.video_player import VideoPlayer
 from .widgets.crop_rotate_widget import CropRotateWidget
 from .widgets.progress_panel import ProgressPanel
 from .workers.processing_worker import ProcessingWorker
+from .dialogs.obstruction_test_dialog import ObstructionTestDialog
 from .core.models import ProjectConfig, CropRegion
 
 
@@ -83,6 +84,10 @@ class MainWindow(QMainWindow):
         self.settings_panel.process_single_requested.connect(
             self._start_processing_single)
 
+        # Test obstruction
+        self.settings_panel.test_obstruction_requested.connect(
+            self._test_obstruction)
+
         # Cancel
         self.progress_panel.cancel_requested.connect(self._cancel_processing)
 
@@ -103,6 +108,72 @@ class MainWindow(QMainWindow):
 
     def _on_crop_applied(self, region: CropRegion):
         self.config.crop_region = region
+
+    def _test_obstruction(self):
+        import cv2
+        # Grab ~3 seconds of frames from current video position
+        cap = self.video_player.cap
+        if cap is None or not cap.isOpened():
+            QMessageBox.warning(self, "No Video",
+                                "Open a video first.")
+            return
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        # Save and restore position
+        saved_pos = cap.get(cv2.CAP_PROP_POS_FRAMES)
+        # Sample ~3 seconds, every 3rd frame to keep it quick
+        sample_count = int(fps * 3)
+        frames = []
+        for _ in range(sample_count):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frames.append(frame)
+        # Restore position
+        cap.set(cv2.CAP_PROP_POS_FRAMES, saved_pos)
+
+        if not frames:
+            QMessageBox.warning(self, "No Frames",
+                                "Could not read frames from current position.")
+            return
+
+        # Apply crop if set
+        crop = self.config.crop_region
+        if crop:
+            cropped = []
+            for frame in frames:
+                if crop.rotation_angle != 0:
+                    h, w = frame.shape[:2]
+                    center = (w / 2, h / 2)
+                    M = cv2.getRotationMatrix2D(center, crop.rotation_angle, 1.0)
+                    cos_a, sin_a = abs(M[0, 0]), abs(M[0, 1])
+                    new_w = int(h * sin_a + w * cos_a)
+                    new_h = int(h * cos_a + w * sin_a)
+                    M[0, 2] += (new_w - w) / 2
+                    M[1, 2] += (new_h - h) / 2
+                    frame = cv2.warpAffine(frame, M, (new_w, new_h))
+                x, y, cw, ch = crop.x, crop.y, crop.w, crop.h
+                fh, fw = frame.shape[:2]
+                x = max(0, min(x, fw - 1))
+                y = max(0, min(y, fh - 1))
+                cw = min(cw, fw - x)
+                ch = min(ch, fh - y)
+                cropped.append(frame[y:y + ch, x:x + cw])
+            frames = cropped
+
+        # Take every 3rd frame to keep the dialog snappy
+        frames = frames[::3]
+        if not frames:
+            QMessageBox.warning(self, "No Frames",
+                                "No frames after cropping.")
+            return
+
+        sensitivity = self.settings_panel.get_sensitivity()
+        dlg = ObstructionTestDialog(frames, sensitivity, self)
+        if dlg.exec_() == QDialog.Accepted:
+            new_sens = dlg.get_sensitivity()
+            self.settings_panel.sensitivity_slider.setValue(
+                int(new_sens * 100))
 
     def _start_processing_single(self):
         video_name = self.video_player.get_current_video_name()
@@ -143,6 +214,8 @@ class MainWindow(QMainWindow):
         # Build config
         self.config.output_directory = output_dir
         self.config.time_frames = time_frames
+        self.config.obstruction_enabled = \
+            self.settings_panel.is_obstruction_enabled()
         self.config.obstruction_sensitivity = \
             self.settings_panel.get_sensitivity()
         self.config.per_video_start = self.settings_panel.is_per_video()
@@ -166,12 +239,16 @@ class MainWindow(QMainWindow):
     def _cancel_processing(self):
         if self.worker:
             self.worker.cancel()
+            self.progress_panel.set_progress(0, "Cancelling...")
 
     def _on_processing_finished(self):
         self.progress_panel.set_processing(False)
         self.settings_panel.btn_process.setEnabled(True)
         self.settings_panel.btn_process_single.setEnabled(True)
-        self.progress_panel.set_progress(100, "Processing complete!")
+        if self.worker and self.worker._cancelled:
+            self.progress_panel.set_progress(0, "Cancelled.")
+        else:
+            self.progress_panel.set_progress(0, "Processing complete!")
 
     def _on_processing_error(self, error: str):
         QMessageBox.critical(self, "Processing Error", error)

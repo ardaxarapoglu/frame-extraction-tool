@@ -64,12 +64,16 @@ class ObstructionDetector:
         score = max(color_dist, edge_anomaly)
         return obstructed, score
 
-    def filter_frames(self, frames: List[np.ndarray]) -> List[int]:
+    def filter_frames(self, frames: List[np.ndarray],
+                      cancel_check=None) -> List[int]:
         if not frames:
             return []
+        cancel_check = cancel_check or (lambda: False)
         self.build_reference(frames)
         good_indices = []
         for i, frame in enumerate(frames):
+            if cancel_check():
+                break
             is_bad, _ = self.is_obstructed(frame)
             if not is_bad:
                 good_indices.append(i)
