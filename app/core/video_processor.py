@@ -137,6 +137,7 @@ class VideoProcessor:
                    if cropped_frames else ""))
 
             # Save unfiltered frames for debugging
+            base = os.path.splitext(video_filename)[0]
             if self.config.save_unfiltered:
                 unfiltered_dir = os.path.join(
                     self.config.output_directory, tf.name, "_unfiltered")
@@ -147,10 +148,10 @@ class VideoProcessor:
                 for ui, uf in enumerate(cropped_frames):
                     if self.cancel_check():
                         break
+                    ts_s = timestamps[ui] / 1000.0 if ui < len(timestamps) else 0.0
                     upath = os.path.join(
                         unfiltered_dir,
-                        f"{os.path.splitext(video_filename)[0]}"
-                        f"_{tf.name}_{ui + 1:04d}.png")
+                        f"{base}_{tf.name}_{ui + 1:04d}_{ts_s:.2f}s.png")
                     cv2.imwrite(upath, uf)
 
             if self.cancel_check():
@@ -174,6 +175,24 @@ class VideoProcessor:
             else:
                 self.progress_callback(0, "  Obstruction detection: disabled")
                 good_indices = list(range(len(cropped_frames)))
+
+            # Save filtered frames for debugging
+            if self.config.save_unfiltered and good_indices:
+                filtered_dir = os.path.join(
+                    self.config.output_directory, tf.name, "_filtered")
+                os.makedirs(filtered_dir, exist_ok=True)
+                self.progress_callback(0,
+                    f"  Saving {len(good_indices)} filtered frames "
+                    f"to {filtered_dir}")
+                for fi, frame_idx in enumerate(good_indices):
+                    if self.cancel_check():
+                        break
+                    ts_s = (timestamps[frame_idx] / 1000.0
+                            if frame_idx < len(timestamps) else 0.0)
+                    fpath = os.path.join(
+                        filtered_dir,
+                        f"{base}_{tf.name}_{fi + 1:04d}_{ts_s:.2f}s.png")
+                    cv2.imwrite(fpath, cropped_frames[frame_idx])
 
             if self.cancel_check():
                 break
