@@ -257,8 +257,14 @@ class VideoProcessor:
             ret, raw_frame = cap.read()
             if not ret:
                 break
+            # OpenCV seek snaps to the nearest keyframe which can be before
+            # start_ms — discard those frames silently.
+            if pos_ms < start_ms:
+                raw_frame = None
+                continue
             if first and skip_first:
                 first = False
+                raw_frame = None
                 continue
             first = False
 

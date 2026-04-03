@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -101,51 +100,46 @@ class DebugPanel(QWidget):
         tf_map = {tf.name: tf.num_frames for tf in time_frames}
 
         found_any = False
-        for phase_name in sorted(os.listdir(self._output_dir)):
-            phase_path = os.path.join(self._output_dir, phase_name)
-            if not os.path.isdir(phase_path) or phase_name.startswith('_'):
-                continue
-            mf_path = os.path.join(phase_path, "_manually-filtered")
-            if not os.path.isdir(mf_path):
+        # Structure: {output_dir}/{video_name}/{phase}/_manually-filtered/
+        for video_name in sorted(os.listdir(self._output_dir)):
+            video_path = os.path.join(self._output_dir, video_name)
+            if not os.path.isdir(video_path) or video_name.startswith('_'):
                 continue
 
-            img_files = sorted(
-                f for f in os.listdir(mf_path)
-                if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-            )
-            if not img_files:
-                continue
+            for phase_name in sorted(os.listdir(video_path)):
+                phase_path = os.path.join(video_path, phase_name)
+                if not os.path.isdir(phase_path) or phase_name.startswith('_'):
+                    continue
 
-            # Group files by video base name.
-            # Filenames are: {video_base}_{phase_name}_{index}_{ts}s.ext
-            # Strip the known suffix to recover video_base.
-            pattern = re.compile(
-                rf'^(.+)_{re.escape(phase_name)}_\d+_[\d.]+s\.(png|jpg|jpeg)$',
-                re.IGNORECASE
-            )
-            video_groups: dict[str, list[str]] = {}
-            for f in img_files:
-                m = pattern.match(f)
-                vbase = m.group(1) if m else "__unknown__"
-                video_groups.setdefault(vbase, []).append(
-                    os.path.join(mf_path, f))
+                mf_path = os.path.join(phase_path, "_manually-filtered")
+                if not os.path.isdir(mf_path):
+                    continue
 
-            default_n = tf_map.get(phase_name, 10)
+                img_files = sorted(
+                    f for f in os.listdir(mf_path)
+                    if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+                )
+                if not img_files:
+                    self._log(
+                        f"  {video_name}/{phase_name}/_manually-filtered/ "
+                        f"is empty — skipping.")
+                    continue
 
-            for vbase, paths in sorted(video_groups.items()):
+                paths = [os.path.join(mf_path, f) for f in img_files]
+                default_n = min(tf_map.get(phase_name, 10), len(paths))
+
                 row = self.table.rowCount()
                 self.table.insertRow(row)
                 self.table.setItem(row, 0, QTableWidgetItem(phase_name))
-                self.table.setItem(row, 1, QTableWidgetItem(vbase))
-                self.table.setItem(
-                    row, 2, QTableWidgetItem(str(len(paths))))
+                self.table.setItem(row, 1, QTableWidgetItem(video_name))
+                self.table.setItem(row, 2, QTableWidgetItem(str(len(paths))))
 
                 sb = QSpinBox()
                 sb.setRange(1, len(paths))
-                sb.setValue(min(default_n, len(paths)))
+                sb.setValue(default_n)
                 self.table.setCellWidget(row, 3, sb)
 
-                self._scan_data.append((phase_name, vbase, paths, sb))
+                self._scan_data.append((phase_name, video_name, paths, sb))
                 found_any = True
 
         if found_any:
@@ -154,8 +148,9 @@ class DebugPanel(QWidget):
                 f"video/phase combination(s) found.")
         else:
             self._log(
-                "No _manually-filtered folders found. "
-                "Expected path: {output_dir}/{phase}/_manually-filtered/")
+                "No _manually-filtered folders found.\n"
+                "Expected path: "
+                "{output_dir}/{video_name}/{phase}/_manually-filtered/")
 
     # --- Process ---
 
