@@ -97,11 +97,6 @@ class SettingsPanel(QWidget):
         self.tracking_enabled_check.setChecked(True)
         layout.addWidget(self.tracking_enabled_check)
 
-        # Debug: save unfiltered frames
-        self.save_unfiltered_check = QCheckBox(
-            "Save all frames before obstruction filtering (debug)")
-        layout.addWidget(self.save_unfiltered_check)
-
         # Per-video marking option
         self.per_video_check = QCheckBox(
             "Mark experiment start separately for each video")
@@ -159,6 +154,11 @@ class SettingsPanel(QWidget):
         process_layout.addWidget(self.btn_process)
 
         layout.addLayout(process_layout)
+
+        # Debug: save unfiltered + filtered frames
+        self.save_unfiltered_check = QCheckBox(
+            "Save all frames before obstruction filtering (debug)")
+        layout.addWidget(self.save_unfiltered_check)
 
         layout.addStretch()
 
@@ -230,6 +230,7 @@ class SettingsPanel(QWidget):
             "time_frames": time_frames,
             "obstruction_enabled": self.obstruction_enabled_check.isChecked(),
             "obstruction_sensitivity": self.sensitivity_slider.value(),
+            "tracking_enabled": self.tracking_enabled_check.isChecked(),
             "per_video_start": self.per_video_check.isChecked(),
         }
 
@@ -276,6 +277,10 @@ class SettingsPanel(QWidget):
             preset.get("obstruction_enabled", True))
         self.sensitivity_slider.setValue(
             preset.get("obstruction_sensitivity", 35))
+
+        # Apply tracking
+        self.tracking_enabled_check.setChecked(
+            preset.get("tracking_enabled", True))
 
         # Apply per-video start
         self.per_video_check.setChecked(
