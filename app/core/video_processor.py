@@ -140,7 +140,7 @@ class VideoProcessor:
             base = os.path.splitext(video_filename)[0]
             if self.config.save_unfiltered:
                 unfiltered_dir = os.path.join(
-                    self.config.output_directory, tf.name, "_unfiltered")
+                    self.config.output_directory, base, tf.name, "_unfiltered")
                 os.makedirs(unfiltered_dir, exist_ok=True)
                 self.progress_callback(0,
                     f"  Saving {len(cropped_frames)} unfiltered frames "
@@ -179,7 +179,7 @@ class VideoProcessor:
             # Save filtered frames for debugging
             if self.config.save_unfiltered and good_indices:
                 filtered_dir = os.path.join(
-                    self.config.output_directory, tf.name, "_filtered")
+                    self.config.output_directory, base, tf.name, "_filtered")
                 os.makedirs(filtered_dir, exist_ok=True)
                 self.progress_callback(0,
                     f"  Saving {len(good_indices)} filtered frames "
@@ -335,8 +335,12 @@ class VideoProcessor:
 
     def _save_frames(self, frames: List[np.ndarray], selected_indices: List[int],
                      timestamps: List[float], video_filename: str, tf: TimeFrame):
-        out_dir = os.path.join(self.config.output_directory, tf.name)
+        video_base = os.path.splitext(video_filename)[0]
+        out_dir = os.path.join(
+            self.config.output_directory, video_base, tf.name)
         os.makedirs(out_dir, exist_ok=True)
+        # Pre-create _manually-filtered folder for the debug workflow
+        os.makedirs(os.path.join(out_dir, "_manually-filtered"), exist_ok=True)
         self.progress_callback(0, f"  Saving to: {out_dir}")
 
         for save_idx, frame_idx in enumerate(selected_indices):
