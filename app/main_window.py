@@ -9,6 +9,7 @@ from .widgets.settings_panel import SettingsPanel
 from .widgets.video_player import VideoPlayer
 from .widgets.crop_rotate_widget import CropRotateWidget
 from .widgets.progress_panel import ProgressPanel
+from .widgets.debug_panel import DebugPanel
 from .workers.processing_worker import ProcessingWorker
 from .dialogs.obstruction_test_dialog import ObstructionTestDialog
 from .core.models import ProjectConfig, CropRegion
@@ -57,6 +58,12 @@ class MainWindow(QMainWindow):
         self.progress_panel = ProgressPanel()
         self.tabs.addTab(self.progress_panel, "Processing Log")
 
+        # Tab 4: Debug (manual filtering → final selection)
+        self.debug_panel = DebugPanel(
+            get_time_frames_fn=lambda: (
+                self.settings_panel.time_frame_editor.get_time_frames()))
+        self.tabs.addTab(self.debug_panel, "Debug")
+
         right_layout.addWidget(self.tabs, 1)
 
         splitter.addWidget(right_widget)
@@ -78,6 +85,10 @@ class MainWindow(QMainWindow):
 
         # Crop applied
         self.crop_widget.crop_applied.connect(self._on_crop_applied)
+
+        # Keep debug panel output dir in sync
+        self.settings_panel.output_dir_edit.textChanged.connect(
+            self.debug_panel.set_output_dir)
 
         # Process
         self.settings_panel.process_requested.connect(self._start_processing)
