@@ -345,8 +345,8 @@ class VideoProcessor:
         out_dir = os.path.join(
             self.config.output_directory, video_base, tf.name)
         os.makedirs(out_dir, exist_ok=True)
-        # Pre-create _manually-filtered folder for the debug workflow
-        os.makedirs(os.path.join(out_dir, "_manually-filtered"), exist_ok=True)
+        if self.config.save_unfiltered:
+            os.makedirs(os.path.join(out_dir, "_manually-filtered"), exist_ok=True)
         self.progress_callback(0, f"  Saving to: {out_dir}")
 
         for save_idx, frame_idx in enumerate(selected_indices):
