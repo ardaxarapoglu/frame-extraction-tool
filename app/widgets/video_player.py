@@ -12,11 +12,58 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 
 try:
-    import pygame
-    pygame.mixer.init()
+    import ctypes
+    _winmm = ctypes.WinDLL('winmm')
     HAS_AUDIO = True
 except Exception:
     HAS_AUDIO = False
+
+
+class _MCIAudio:
+    """Thin wrapper around Windows MCI for console-free audio playback.
+    Uses winmm.dll which is built into every Windows installation."""
+
+    _ALIAS = 'fp_audio'
+
+    def __init__(self):
+        self._winmm = _winmm
+        self._loaded = False
+
+    def load(self, path: str) -> bool:
+        self._close()
+        err = self._cmd(f'open "{path}" alias {self._ALIAS}')
+        if err != 0:
+            return False
+        self._cmd(f'set {self._ALIAS} time format milliseconds')
+        self._loaded = True
+        return True
+
+    def play(self, start_ms: float = 0.0):
+        if not self._loaded:
+            return
+        self._cmd(f'seek {self._ALIAS} to {int(start_ms)}')
+        self._cmd(f'play {self._ALIAS}')
+
+    def pause(self):
+        if self._loaded:
+            self._cmd(f'pause {self._ALIAS}')
+
+    def set_volume(self, vol_0_to_1: float):
+        """vol_0_to_1: 0.0 = silent, 1.0 = full. MCI scale is 0-1000."""
+        if self._loaded:
+            self._cmd(
+                f'setaudio {self._ALIAS} volume to {int(vol_0_to_1 * 1000)}')
+
+    def close(self):
+        self._close()
+
+    def _close(self):
+        if self._loaded:
+            self._cmd(f'close {self._ALIAS}')
+            self._loaded = False
+
+    def _cmd(self, command: str) -> int:
+        return self._winmm.mciSendStringW(command, None, 0, None)
 
 
 class VideoPlayer(QWidget):
@@ -44,6 +91,7 @@ class VideoPlayer(QWidget):
         self._muted = False
         self._temp_audio = None # path to temp mp3
         self._extract_token = 0 # cancels stale extractions
+        self._mci = _MCIAudio() if HAS_AUDIO else None
 
         if HAS_AUDIO:
             self._audio_ready.connect(self._on_audio_ready)
@@ -247,13 +295,11 @@ class VideoPlayer(QWidget):
             except OSError:
                 pass
         self._temp_audio = tmp_path
-        try:
-            pygame.mixer.music.load(tmp_path)
-            pygame.mixer.music.set_volume(
-                0.0 if self._muted else self._volume / 100.0)
+        if self._mci.load(tmp_path):
+            self._mci.set_volume(0.0 if self._muted else self._volume / 100.0)
             self._audio_loaded = True
             self._set_audio_status("Audio ready")
-        except Exception as e:
+        else:
             self._audio_loaded = False
             self._set_audio_status("Audio error")
 
@@ -316,18 +362,16 @@ class VideoPlayer(QWidget):
         interval = max(1, int(1000 / self.fps))
         self.timer.start(interval)
 
-        if HAS_AUDIO and self._audio_loaded:
-            start_s = self.current_frame_num / self.fps
-            pygame.mixer.music.play(start=start_s)
-            if self._muted:
-                pygame.mixer.music.set_volume(0.0)
+        if self._mci and self._audio_loaded:
+            start_ms = (self.current_frame_num / self.fps) * 1000
+            self._mci.play(start_ms)
 
     def _stop(self):
         self.is_playing = False
         self.btn_play.setText("Play")
         self.timer.stop()
-        if HAS_AUDIO and self._audio_loaded:
-            pygame.mixer.music.pause()
+        if self._mci and self._audio_loaded:
+            self._mci.pause()
 
     def _next_frame(self):
         if self.cap is None:
@@ -349,8 +393,8 @@ class VideoPlayer(QWidget):
     def _on_slider_pressed(self):
         if self.is_playing:
             self.timer.stop()
-            if HAS_AUDIO and self._audio_loaded:
-                pygame.mixer.music.pause()
+            if self._mci and self._audio_loaded:
+                self._mci.pause()
 
     def _on_slider_released(self):
         self.current_frame_num = self.seek_slider.value()
@@ -358,11 +402,9 @@ class VideoPlayer(QWidget):
         if self.is_playing:
             interval = max(1, int(1000 / self.fps))
             self.timer.start(interval)
-            if HAS_AUDIO and self._audio_loaded:
-                start_s = self.current_frame_num / self.fps
-                pygame.mixer.music.play(start=start_s)
-                if self._muted:
-                    pygame.mixer.music.set_volume(0.0)
+            if self._mci and self._audio_loaded:
+                start_ms = (self.current_frame_num / self.fps) * 1000
+                self._mci.play(start_ms)
 
     def _step(self, seconds: float):
         if self.cap is None:
@@ -389,14 +431,13 @@ class VideoPlayer(QWidget):
 
     def _set_volume(self, value: int):
         self._volume = value
-        if HAS_AUDIO and self._audio_loaded and not self._muted:
-            pygame.mixer.music.set_volume(value / 100.0)
+        if self._mci and self._audio_loaded and not self._muted:
+            self._mci.set_volume(value / 100.0)
 
     def _toggle_mute(self, muted: bool):
         self._muted = muted
-        if HAS_AUDIO and self._audio_loaded:
-            pygame.mixer.music.set_volume(
-                0.0 if muted else self._volume / 100.0)
+        if self._mci and self._audio_loaded:
+            self._mci.set_volume(0.0 if muted else self._volume / 100.0)
         self.btn_mute.setText("Unmute" if muted else "Mute")
 
     # --- Mark experiment start ---
@@ -431,12 +472,8 @@ class VideoPlayer(QWidget):
         if self.cap:
             self.cap.release()
             self.cap = None
-        if HAS_AUDIO:
-            try:
-                pygame.mixer.music.stop()
-                pygame.mixer.quit()
-            except Exception:
-                pass
+        if self._mci:
+            self._mci.close()
         if self._temp_audio:
             try:
                 os.unlink(self._temp_audio)
