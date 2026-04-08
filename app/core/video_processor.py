@@ -176,8 +176,8 @@ class VideoProcessor:
                 self.progress_callback(0, "  Obstruction detection: disabled")
                 good_indices = list(range(len(cropped_frames)))
 
-            # Save filtered frames for debugging
-            if self.config.save_unfiltered and good_indices:
+            # Save filtered frames for debugging (only when obstruction detection ran)
+            if self.config.save_unfiltered and self.config.obstruction_enabled and good_indices:
                 filtered_dir = os.path.join(
                     self.config.output_directory, base, tf.name, "_filtered")
                 os.makedirs(filtered_dir, exist_ok=True)
