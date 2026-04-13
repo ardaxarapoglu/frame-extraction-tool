@@ -82,12 +82,6 @@ class SettingsPanel(QWidget):
         obs_layout.addWidget(self.obs_controls_widget)
         layout.addWidget(obs_group)
 
-        # Tracking toggle
-        self.tracking_enabled_check = QCheckBox(
-            "Track crop region for camera movement")
-        self.tracking_enabled_check.setChecked(True)
-        layout.addWidget(self.tracking_enabled_check)
-
         # Per-video marking option
         self.per_video_check = QCheckBox(
             "Mark experiment start separately for each video")
@@ -171,10 +165,6 @@ class SettingsPanel(QWidget):
         if obs_sens is not None:
             self.sensitivity_slider.setValue(int(obs_sens * 100))
 
-        tracking = vdc.get("tracking_enabled")
-        if tracking is not None:
-            self.tracking_enabled_check.setChecked(tracking)
-
         save_unf = vdc.get("save_unfiltered")
         if save_unf is not None:
             self.save_unfiltered_check.setChecked(save_unf)
@@ -208,9 +198,6 @@ class SettingsPanel(QWidget):
 
     def _on_obstruction_toggled(self, enabled: bool):
         self.obs_controls_widget.setEnabled(enabled)
-
-    def is_tracking_enabled(self) -> bool:
-        return self.tracking_enabled_check.isChecked()
 
     def is_save_unfiltered(self) -> bool:
         return self.save_unfiltered_check.isChecked()
@@ -251,7 +238,6 @@ class SettingsPanel(QWidget):
             "time_frames": time_frames,
             "obstruction_enabled": self.obstruction_enabled_check.isChecked(),
             "obstruction_sensitivity": self.sensitivity_slider.value(),
-            "tracking_enabled": self.tracking_enabled_check.isChecked(),
             "per_video_start": self.per_video_check.isChecked(),
         }
 
@@ -298,10 +284,6 @@ class SettingsPanel(QWidget):
             preset.get("obstruction_enabled", True))
         self.sensitivity_slider.setValue(
             preset.get("obstruction_sensitivity", 35))
-
-        # Apply tracking
-        self.tracking_enabled_check.setChecked(
-            preset.get("tracking_enabled", True))
 
         # Apply per-video start
         self.per_video_check.setChecked(

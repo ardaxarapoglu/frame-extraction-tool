@@ -87,8 +87,9 @@ class MainWindow(QMainWindow):
         self.video_player.edit_video_timeframes_requested.connect(
             self._on_edit_video_timeframes)
 
-        # Crop applied
+        # Crop applied / video changed from crop tab
         self.crop_widget.crop_applied.connect(self._on_crop_applied)
+        self.crop_widget.video_changed.connect(self._on_crop_tab_video_changed)
 
         # Debug panel output dir
         self.settings_panel.output_dir_edit.textChanged.connect(
@@ -111,8 +112,6 @@ class MainWindow(QMainWindow):
         self.settings_panel.obstruction_enabled_check.toggled.connect(
             self._schedule_save)
         self.settings_panel.sensitivity_slider.valueChanged.connect(
-            self._schedule_save)
-        self.settings_panel.tracking_enabled_check.toggled.connect(
             self._schedule_save)
         self.settings_panel.save_unfiltered_check.toggled.connect(
             self._schedule_save)
@@ -138,8 +137,6 @@ class MainWindow(QMainWindow):
                       self.settings_panel.is_obstruction_enabled())
         self._vdc.set("obstruction_sensitivity",
                       self.settings_panel.get_sensitivity())
-        self._vdc.set("tracking_enabled",
-                      self.settings_panel.is_tracking_enabled())
         self._vdc.set("save_unfiltered",
                       self.settings_panel.is_save_unfiltered())
         self._vdc.set("per_video_start",
@@ -167,8 +164,9 @@ class MainWindow(QMainWindow):
         self.config.video_start_marks = self._vdc.get_all_video_start_marks()
         self.config.video_time_frames = self._vdc.get_all_custom_time_frames()
 
-        # Update the video player list
+        # Update the video player list and crop tab combo
         self.video_player.set_video_directory(directory)
+        self.crop_widget.set_video_list(self.video_player.video_files)
 
     # ------------------------------------------------------------------ #
     # Video player events
@@ -176,6 +174,9 @@ class MainWindow(QMainWindow):
 
     def _on_video_selected(self, video_name: str):
         """Called whenever the player switches to a different video."""
+        # Sync crop tab combo (blockSignals inside — no loop)
+        self.crop_widget.set_current_video(video_name)
+
         # Restore saved start mark
         saved_ms = self._vdc.get_video_start_ms(video_name)
         if saved_ms is not None:
@@ -195,14 +196,22 @@ class MainWindow(QMainWindow):
             self.video_player.total_frames,
             start_ms)
 
-        # Restore saved crop region into config and crop widget
+        # Restore saved crop — only override config.crop_region if one is saved.
+        # Do NOT set to None: videos without a saved crop should keep the
+        # current global crop region rather than wiping it.
         saved_crop = self._vdc.get_video_crop_region(video_name)
-        self.config.crop_region = saved_crop
         if saved_crop:
+            self.config.crop_region = saved_crop
             frame = self.video_player.get_current_frame()
             if frame is not None:
                 self.crop_widget.set_frame(frame)
                 self.crop_widget.load_crop_region(saved_crop)
+
+    def _on_crop_tab_video_changed(self, video_name: str):
+        """User picked a video from the crop tab combo — drive the player."""
+        idx = self.video_player.video_combo.findText(video_name)
+        if idx >= 0:
+            self.video_player.video_combo.setCurrentIndex(idx)
 
     def _on_experiment_marked(self, ms: float):
         video_name = self.video_player.get_current_video_name()
@@ -314,7 +323,6 @@ class MainWindow(QMainWindow):
             self.settings_panel.is_obstruction_enabled()
         self.config.obstruction_sensitivity = \
             self.settings_panel.get_sensitivity()
-        self.config.tracking_enabled = self.settings_panel.is_tracking_enabled()
         self.config.save_unfiltered = self.settings_panel.is_save_unfiltered()
         self.config.per_video_start = self.settings_panel.is_per_video()
 

@@ -81,6 +81,7 @@ class ResizableRect(QGraphicsRectItem):
 
 class CropRotateWidget(QWidget):
     crop_applied = pyqtSignal(CropRegion)
+    video_changed = pyqtSignal(str)  # emits filename when user picks a video
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -105,6 +106,15 @@ class CropRotateWidget(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
+
+        # Video selector
+        from PyQt5.QtWidgets import QComboBox
+        sel_layout = QHBoxLayout()
+        sel_layout.addWidget(QLabel("Video:"))
+        self.video_combo = QComboBox()
+        self.video_combo.currentIndexChanged.connect(self._on_combo_changed)
+        sel_layout.addWidget(self.video_combo, 1)
+        layout.addLayout(sel_layout)
 
         # Graphics view for the frame
         self.scene = QGraphicsScene()
@@ -198,6 +208,33 @@ class CropRotateWidget(QWidget):
             "Load a video and mark the experiment start to set crop region")
         self.status_label.setStyleSheet("color: gray;")
         layout.addWidget(self.status_label)
+
+    # ------------------------------------------------------------------ #
+    # Video list / selection
+    # ------------------------------------------------------------------ #
+
+    def set_video_list(self, video_files: list, current: str = ""):
+        self.video_combo.blockSignals(True)
+        self.video_combo.clear()
+        for vf in video_files:
+            self.video_combo.addItem(vf)
+        if current:
+            idx = self.video_combo.findText(current)
+            if idx >= 0:
+                self.video_combo.setCurrentIndex(idx)
+        self.video_combo.blockSignals(False)
+
+    def set_current_video(self, video_name: str):
+        self.video_combo.blockSignals(True)
+        idx = self.video_combo.findText(video_name)
+        if idx >= 0:
+            self.video_combo.setCurrentIndex(idx)
+        self.video_combo.blockSignals(False)
+
+    def _on_combo_changed(self, index: int):
+        name = self.video_combo.itemText(index)
+        if name:
+            self.video_changed.emit(name)
 
     # ------------------------------------------------------------------ #
     # Video loading for the time-preview slider

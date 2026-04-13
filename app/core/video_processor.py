@@ -4,7 +4,6 @@ import os
 from typing import List, Callable, Optional, Tuple
 
 from .models import ProjectConfig, TimeFrame, CropRegion
-from .tracker import ROITracker
 from .obstruction_detector import ObstructionDetector
 from .frame_selector import select_frames
 from .naming import generate_filename
@@ -134,7 +133,7 @@ class VideoProcessor:
                 f"(duration: {tf.duration_seconds}s)")
 
             self.progress_callback(0,
-                f"  Streaming frames (crop + track)...")
+                f"  Streaming frames...")
             cropped_frames, guard_regions, timestamps = self._stream_clip(
                 cap, fps, current_ms, tf.duration_seconds,
                 skip_first=(tf_idx > 0))
@@ -285,13 +284,7 @@ class VideoProcessor:
         cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)
         end_ms = start_ms + duration_s * 1000
 
-        use_tracking = crop and self.config.tracking_enabled
-        tracker = None
-        bbox = None
-        if crop:
-            bbox = (crop.x, crop.y, crop.w, crop.h)
-            if use_tracking:
-                tracker = ROITracker()
+        bbox = (crop.x, crop.y, crop.w, crop.h) if crop else None
 
         first = True
         frame_count = 0
@@ -327,18 +320,8 @@ class VideoProcessor:
                 frame = self._rotate_frame(frame, crop.rotation_angle)
             raw_frame = None
 
-            # Crop (with or without tracking)
             if crop:
-                if use_tracking and tracker:
-                    if frame_count == 0:
-                        tracker.init(frame, bbox)
-                        current_bbox = bbox
-                    else:
-                        _, current_bbox = tracker.update(frame)
-                else:
-                    current_bbox = bbox
-
-                x, y, w, h = current_bbox
+                x, y, w, h = bbox
                 fh, fw = frame.shape[:2]
                 x = max(0, min(x, fw - 1))
                 y = max(0, min(y, fh - 1))
