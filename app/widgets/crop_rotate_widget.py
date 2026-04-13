@@ -305,6 +305,41 @@ class CropRotateWidget(QWidget):
         self.status_label.setText("Crop region set: " + ", ".join(parts))
         self.status_label.setStyleSheet("color: #388e3c; font-weight: bold;")
 
+    def load_crop_region(self, region: CropRegion):
+        """Restore a previously saved crop region into the widget."""
+        if self.original_frame is None:
+            return
+        # Set transform sliders without triggering _update_display each time
+        for slider, val in [
+            (self.rotation_slider, int(region.rotation_angle * 10)),
+            (self.persp_x_slider,  int(region.perspective_x  * 10)),
+            (self.persp_y_slider,  int(region.perspective_y  * 10)),
+        ]:
+            slider.blockSignals(True)
+            slider.setValue(val)
+            slider.blockSignals(False)
+        self.rotation_angle  = region.rotation_angle
+        self.perspective_x   = region.perspective_x
+        self.perspective_y   = region.perspective_y
+        self.rotation_label.setText(f"{self.rotation_angle:.1f}°")
+        self.persp_x_label.setText(f"{self.perspective_x:.1f}°")
+        self.persp_y_label.setText(f"{self.perspective_y:.1f}°")
+        # Rebuild the scene (creates a default crop rect)
+        self._update_display()
+        # Override the default rect with the saved values
+        if self.crop_rect is not None:
+            self.crop_rect.setRect(
+                QRectF(region.x, region.y, region.w, region.h))
+        parts = [f"({region.x}, {region.y}) {region.w}×{region.h}"]
+        if region.rotation_angle:
+            parts.append(f"rot {region.rotation_angle:.1f}°")
+        if region.perspective_x or region.perspective_y:
+            parts.append(
+                f"persp ({region.perspective_x:.1f}°, "
+                f"{region.perspective_y:.1f}°)")
+        self.status_label.setText("Crop loaded: " + ", ".join(parts))
+        self.status_label.setStyleSheet("color: #1565c0; font-weight: bold;")
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self.scene.items():

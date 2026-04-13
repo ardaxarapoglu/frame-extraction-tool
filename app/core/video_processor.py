@@ -61,7 +61,26 @@ class VideoProcessor:
             self.progress_callback(0, f"Error processing {video_filename}: {e}")
         self.progress_callback(100, f"Done. Processed {video_filename}.")
 
+    def process_selected(self, video_filenames: List[str]):
+        total = len(video_filenames)
+        for i, vf in enumerate(video_filenames):
+            if self.cancel_check():
+                self.progress_callback(0, "Processing cancelled.")
+                return
+            pct = int((i / total) * 100)
+            self.progress_callback(pct, f"Processing {vf} ({i + 1}/{total})...")
+            video_path = os.path.join(self.config.video_directory, vf)
+            try:
+                self._process_video(video_path, vf)
+            except Exception as e:
+                self.progress_callback(pct, f"Error processing {vf}: {e}")
+        self.progress_callback(100, f"Done. Processed {total} video(s).")
+
     def _process_video(self, video_path: str, video_filename: str):
+        # Use per-video time frames if configured, otherwise fall back to global
+        time_frames = (self.config.video_time_frames.get(video_filename)
+                       or self.config.time_frames)
+
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             self.progress_callback(0, f"Cannot open {video_filename}")
@@ -101,7 +120,7 @@ class VideoProcessor:
 
         current_ms = start_ms
 
-        for tf_idx, tf in enumerate(self.config.time_frames):
+        for tf_idx, tf in enumerate(time_frames):
             if self.cancel_check():
                 break
 
@@ -109,7 +128,7 @@ class VideoProcessor:
             clip_end_s = clip_start_s + tf.duration_seconds
             self.progress_callback(0,
                 f"  --- Time frame '{tf.name}' ({tf_idx + 1}/"
-                f"{len(self.config.time_frames)}) ---")
+                f"{len(time_frames)}) ---")
             self.progress_callback(0,
                 f"  Clip range: {clip_start_s:.2f}s - {clip_end_s:.2f}s "
                 f"(duration: {tf.duration_seconds}s)")

@@ -10,7 +10,7 @@ from .time_frame_editor import TimeFrameEditor
 
 class SettingsPanel(QWidget):
     video_dir_changed = pyqtSignal(str)
-    process_requested = pyqtSignal()
+    process_multiple_requested = pyqtSignal()
     process_single_requested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -134,14 +134,14 @@ class SettingsPanel(QWidget):
             self.process_single_requested.emit)
         process_layout.addWidget(self.btn_process_single)
 
-        self.btn_process = QPushButton("▶ Process All Videos")
+        self.btn_process = QPushButton("▶ Process Multiple Videos")
         self.btn_process.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
             "font-weight: bold; padding: 10px; font-size: 13px; "
             "border-radius: 4px; }"
             "QPushButton:hover { background-color: #1565c0; }"
             "QPushButton:disabled { background-color: #90a4ae; }")
-        self.btn_process.clicked.connect(self.process_requested.emit)
+        self.btn_process.clicked.connect(self.process_multiple_requested.emit)
         process_layout.addWidget(self.btn_process)
 
         layout.addLayout(process_layout)
@@ -152,6 +152,36 @@ class SettingsPanel(QWidget):
         layout.addWidget(self.save_unfiltered_check)
 
         layout.addStretch()
+
+    def apply_config(self, vdc):
+        """Restore UI from a VideoDirectoryConfig (called after loading a dir)."""
+        out = vdc.get("output_directory", "")
+        if out:
+            self.output_dir_edit.setText(out)
+
+        tfs = vdc.get_global_time_frames()
+        if tfs:
+            self.time_frame_editor.set_time_frames(tfs)
+
+        obs_enabled = vdc.get("obstruction_enabled")
+        if obs_enabled is not None:
+            self.obstruction_enabled_check.setChecked(obs_enabled)
+
+        obs_sens = vdc.get("obstruction_sensitivity")
+        if obs_sens is not None:
+            self.sensitivity_slider.setValue(int(obs_sens * 100))
+
+        tracking = vdc.get("tracking_enabled")
+        if tracking is not None:
+            self.tracking_enabled_check.setChecked(tracking)
+
+        save_unf = vdc.get("save_unfiltered")
+        if save_unf is not None:
+            self.save_unfiltered_check.setChecked(save_unf)
+
+        per_video = vdc.get("per_video_start")
+        if per_video is not None:
+            self.per_video_check.setChecked(per_video)
 
     def _browse_video_dir(self):
         d = QFileDialog.getExistingDirectory(self, "Select Video Directory")
