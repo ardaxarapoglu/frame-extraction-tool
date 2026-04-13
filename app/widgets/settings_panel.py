@@ -12,7 +12,6 @@ class SettingsPanel(QWidget):
     video_dir_changed = pyqtSignal(str)
     process_requested = pyqtSignal()
     process_single_requested = pyqtSignal()
-    test_obstruction_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -79,14 +78,6 @@ class SettingsPanel(QWidget):
         slider_layout.addWidget(self.sensitivity_label)
         obs_controls_layout.addLayout(slider_layout)
 
-        self.btn_test_obstruction = QPushButton("Test Obstruction Detection...")
-        self.btn_test_obstruction.setStyleSheet(
-            "QPushButton { background-color: #f57c00; color: white; "
-            "font-weight: bold; padding: 6px 12px; border-radius: 4px; }"
-            "QPushButton:hover { background-color: #e65100; }")
-        self.btn_test_obstruction.clicked.connect(
-            self.test_obstruction_requested.emit)
-        obs_controls_layout.addWidget(self.btn_test_obstruction)
 
         obs_layout.addWidget(self.obs_controls_widget)
         layout.addWidget(obs_group)

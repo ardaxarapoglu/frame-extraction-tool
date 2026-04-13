@@ -116,7 +116,7 @@ class VideoProcessor:
 
             self.progress_callback(0,
                 f"  Streaming frames (crop + track)...")
-            cropped_frames, timestamps = self._stream_clip(
+            cropped_frames, guard_regions, timestamps = self._stream_clip(
                 cap, fps, current_ms, tf.duration_seconds,
                 skip_first=(tf_idx > 0))
 
@@ -165,7 +165,9 @@ class VideoProcessor:
                 detector = ObstructionDetector(
                     sensitivity=self.config.obstruction_sensitivity)
                 good_indices = detector.filter_frames(
-                    cropped_frames, cancel_check=self.cancel_check)
+                    cropped_frames,
+                    guard_regions=guard_regions,
+                    cancel_check=self.cancel_check)
                 if self.cancel_check():
                     break
                 rejected = len(cropped_frames) - len(good_indices)
@@ -176,23 +178,45 @@ class VideoProcessor:
                 self.progress_callback(0, "  Obstruction detection: disabled")
                 good_indices = list(range(len(cropped_frames)))
 
-            # Save filtered frames for debugging (only when obstruction detection ran)
-            if self.config.save_unfiltered and self.config.obstruction_enabled and good_indices:
-                filtered_dir = os.path.join(
-                    self.config.output_directory, base, tf.name, "_filtered")
-                os.makedirs(filtered_dir, exist_ok=True)
-                self.progress_callback(0,
-                    f"  Saving {len(good_indices)} filtered frames "
-                    f"to {filtered_dir}")
-                for fi, frame_idx in enumerate(good_indices):
-                    if self.cancel_check():
-                        break
-                    ts_s = (timestamps[frame_idx] / 1000.0
-                            if frame_idx < len(timestamps) else 0.0)
-                    fpath = os.path.join(
-                        filtered_dir,
-                        f"{base}_{tf.name}_{fi + 1:04d}_{ts_s:.2f}s.png")
-                    cv2.imwrite(fpath, cropped_frames[frame_idx])
+            # Save filtered/rejected frames for debugging (only when obstruction detection ran)
+            if self.config.save_unfiltered and self.config.obstruction_enabled:
+                good_set = set(good_indices)
+                rejected_indices = [i for i in range(len(cropped_frames))
+                                    if i not in good_set]
+
+                if good_indices:
+                    filtered_dir = os.path.join(
+                        self.config.output_directory, base, tf.name, "_filtered")
+                    os.makedirs(filtered_dir, exist_ok=True)
+                    self.progress_callback(0,
+                        f"  Saving {len(good_indices)} filtered frames "
+                        f"to {filtered_dir}")
+                    for fi, frame_idx in enumerate(good_indices):
+                        if self.cancel_check():
+                            break
+                        ts_s = (timestamps[frame_idx] / 1000.0
+                                if frame_idx < len(timestamps) else 0.0)
+                        fpath = os.path.join(
+                            filtered_dir,
+                            f"{base}_{tf.name}_{fi + 1:04d}_{ts_s:.2f}s.png")
+                        cv2.imwrite(fpath, cropped_frames[frame_idx])
+
+                if rejected_indices:
+                    rejected_dir = os.path.join(
+                        self.config.output_directory, base, tf.name, "_rejected")
+                    os.makedirs(rejected_dir, exist_ok=True)
+                    self.progress_callback(0,
+                        f"  Saving {len(rejected_indices)} rejected frames "
+                        f"to {rejected_dir}")
+                    for ri, frame_idx in enumerate(rejected_indices):
+                        if self.cancel_check():
+                            break
+                        ts_s = (timestamps[frame_idx] / 1000.0
+                                if frame_idx < len(timestamps) else 0.0)
+                        rpath = os.path.join(
+                            rejected_dir,
+                            f"{base}_{tf.name}_{ri + 1:04d}_{ts_s:.2f}s.png")
+                        cv2.imwrite(rpath, cropped_frames[frame_idx])
 
             if self.cancel_check():
                 break
@@ -227,9 +251,16 @@ class VideoProcessor:
                      start_ms: float, duration_s: float,
                      skip_first: bool = False):
         """Read frames one at a time, rotate+crop immediately, only keep
-        the small cropped result. Never holds full-resolution frames in memory."""
+        the small cropped result. Never holds full-resolution frames in memory.
+
+        Returns (cropped_frames, guard_regions, timestamps).
+        guard_regions is a list of border-ring images (same length as
+        cropped_frames) used for obstruction detection, or None when
+        no crop region is set.
+        """
         crop = self.config.crop_region
         cropped_frames = []
+        guard_regions = [] if crop else None
         timestamps = []
 
         cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)
@@ -294,8 +325,14 @@ class VideoProcessor:
                 y = max(0, min(y, fh - 1))
                 w = min(w, fw - x)
                 h = min(h, fh - y)
+
+                # Extract guard border before cropping
+                guard = ObstructionDetector.extract_guard_region(
+                    frame, x, y, w, h,
+                    margin=40)
+                guard_regions.append(guard)
+
                 crop_img = frame[y:y + h, x:x + w].copy()
-                # Free the full rotated frame
                 frame = None
                 cropped_frames.append(crop_img)
             else:
@@ -308,7 +345,7 @@ class VideoProcessor:
                 self.progress_callback(0,
                     f"    {frame_count}/{expected} frames processed...")
 
-        return cropped_frames, timestamps
+        return cropped_frames, guard_regions, timestamps
 
     @staticmethod
     def _perspective_warp(frame: np.ndarray,
