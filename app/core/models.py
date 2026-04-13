@@ -31,7 +31,8 @@ class ProjectConfig:
     crop_region: Optional[CropRegion] = None
     obstruction_enabled: bool = True
     obstruction_sensitivity: float = 0.35
-    tracking_enabled: bool = True
     save_unfiltered: bool = False
     per_video_start: bool = False
     video_start_marks: dict = field(default_factory=dict)
+    # Per-video custom time frames: {video_filename: List[TimeFrame]}
+    video_time_frames: dict = field(default_factory=dict)

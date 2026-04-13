@@ -10,7 +10,7 @@ from .time_frame_editor import TimeFrameEditor
 
 class SettingsPanel(QWidget):
     video_dir_changed = pyqtSignal(str)
-    process_requested = pyqtSignal()
+    process_multiple_requested = pyqtSignal()
     process_single_requested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -82,12 +82,6 @@ class SettingsPanel(QWidget):
         obs_layout.addWidget(self.obs_controls_widget)
         layout.addWidget(obs_group)
 
-        # Tracking toggle
-        self.tracking_enabled_check = QCheckBox(
-            "Track crop region for camera movement")
-        self.tracking_enabled_check.setChecked(True)
-        layout.addWidget(self.tracking_enabled_check)
-
         # Per-video marking option
         self.per_video_check = QCheckBox(
             "Mark experiment start separately for each video")
@@ -134,14 +128,14 @@ class SettingsPanel(QWidget):
             self.process_single_requested.emit)
         process_layout.addWidget(self.btn_process_single)
 
-        self.btn_process = QPushButton("▶ Process All Videos")
+        self.btn_process = QPushButton("▶ Process Multiple Videos")
         self.btn_process.setStyleSheet(
             "QPushButton { background-color: #1976d2; color: white; "
             "font-weight: bold; padding: 10px; font-size: 13px; "
             "border-radius: 4px; }"
             "QPushButton:hover { background-color: #1565c0; }"
             "QPushButton:disabled { background-color: #90a4ae; }")
-        self.btn_process.clicked.connect(self.process_requested.emit)
+        self.btn_process.clicked.connect(self.process_multiple_requested.emit)
         process_layout.addWidget(self.btn_process)
 
         layout.addLayout(process_layout)
@@ -152,6 +146,32 @@ class SettingsPanel(QWidget):
         layout.addWidget(self.save_unfiltered_check)
 
         layout.addStretch()
+
+    def apply_config(self, vdc):
+        """Restore UI from a VideoDirectoryConfig (called after loading a dir)."""
+        out = vdc.get("output_directory", "")
+        if out:
+            self.output_dir_edit.setText(out)
+
+        tfs = vdc.get_global_time_frames()
+        if tfs:
+            self.time_frame_editor.set_time_frames(tfs)
+
+        obs_enabled = vdc.get("obstruction_enabled")
+        if obs_enabled is not None:
+            self.obstruction_enabled_check.setChecked(obs_enabled)
+
+        obs_sens = vdc.get("obstruction_sensitivity")
+        if obs_sens is not None:
+            self.sensitivity_slider.setValue(int(obs_sens * 100))
+
+        save_unf = vdc.get("save_unfiltered")
+        if save_unf is not None:
+            self.save_unfiltered_check.setChecked(save_unf)
+
+        per_video = vdc.get("per_video_start")
+        if per_video is not None:
+            self.per_video_check.setChecked(per_video)
 
     def _browse_video_dir(self):
         d = QFileDialog.getExistingDirectory(self, "Select Video Directory")
@@ -178,9 +198,6 @@ class SettingsPanel(QWidget):
 
     def _on_obstruction_toggled(self, enabled: bool):
         self.obs_controls_widget.setEnabled(enabled)
-
-    def is_tracking_enabled(self) -> bool:
-        return self.tracking_enabled_check.isChecked()
 
     def is_save_unfiltered(self) -> bool:
         return self.save_unfiltered_check.isChecked()
@@ -221,7 +238,6 @@ class SettingsPanel(QWidget):
             "time_frames": time_frames,
             "obstruction_enabled": self.obstruction_enabled_check.isChecked(),
             "obstruction_sensitivity": self.sensitivity_slider.value(),
-            "tracking_enabled": self.tracking_enabled_check.isChecked(),
             "per_video_start": self.per_video_check.isChecked(),
         }
 
@@ -268,10 +284,6 @@ class SettingsPanel(QWidget):
             preset.get("obstruction_enabled", True))
         self.sensitivity_slider.setValue(
             preset.get("obstruction_sensitivity", 35))
-
-        # Apply tracking
-        self.tracking_enabled_check.setChecked(
-            preset.get("tracking_enabled", True))
 
         # Apply per-video start
         self.per_video_check.setChecked(

@@ -22,9 +22,11 @@ except Exception:
 
 
 class VideoPlayer(QWidget):
-    experiment_marked = pyqtSignal(float)   # emits timestamp in ms
-    frame_for_crop = pyqtSignal(np.ndarray) # emits the frame at marked position
-    _audio_ready = pyqtSignal(str)          # internal: temp mp3 path
+    experiment_marked = pyqtSignal(float)          # emits timestamp in ms
+    frame_for_crop = pyqtSignal(np.ndarray)        # emits the frame at marked position
+    video_selected = pyqtSignal(str)               # emits video filename after load
+    edit_video_timeframes_requested = pyqtSignal(str)  # emits video filename
+    _audio_ready = pyqtSignal(str)                 # internal: temp mp3 path
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -157,6 +159,17 @@ class VideoPlayer(QWidget):
 
         layout.addLayout(mark_layout)
 
+        # Per-video time frames status
+        tf_layout = QHBoxLayout()
+        self.tf_status_label = QLabel("Time frames: Global")
+        self.tf_status_label.setStyleSheet("color: gray; font-size: 11px;")
+        tf_layout.addWidget(self.tf_status_label, 1)
+        self.btn_edit_tf = QPushButton("Edit time frames for this video")
+        self.btn_edit_tf.setStyleSheet("font-size: 11px; padding: 3px 8px;")
+        self.btn_edit_tf.clicked.connect(self._request_edit_timeframes)
+        tf_layout.addWidget(self.btn_edit_tf)
+        layout.addLayout(tf_layout)
+
     # --- Video directory / loading ---
 
     def set_video_directory(self, directory: str):
@@ -183,6 +196,8 @@ class VideoPlayer(QWidget):
         if self.cap:
             self.cap.release()
 
+        self.clear_mark_display()
+        self.set_timeframes_status(False, 0)
         self.current_video_path = path
         self.cap = cv2.VideoCapture(path)
         if not self.cap.isOpened():
@@ -207,6 +222,9 @@ class VideoPlayer(QWidget):
             ).start()
 
         self._show_current_frame()
+
+        # Notify main window so it can restore saved mark / TF status
+        self.video_selected.emit(os.path.basename(path))
 
     # --- Audio extraction (background thread) ---
 
@@ -413,6 +431,34 @@ class VideoPlayer(QWidget):
         if ret:
             self.frame_for_crop.emit(frame)
 
+    def _request_edit_timeframes(self):
+        name = self.get_current_video_name()
+        if name:
+            self.edit_video_timeframes_requested.emit(name)
+
+    # --- Public setters / display helpers ---
+
+    def set_mark_display(self, ms: float):
+        """Show a saved mark (loaded from config) without emitting experiment_marked."""
+        self.marked_ms = ms
+        self.mark_label.setText(f"Marked at {self._format_time(ms)}")
+        self.mark_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
+
+    def clear_mark_display(self):
+        self.marked_ms = None
+        self.mark_label.setText("No mark set")
+        self.mark_label.setStyleSheet("color: gray;")
+
+    def set_timeframes_status(self, has_custom: bool, phase_count: int):
+        if has_custom:
+            self.tf_status_label.setText(
+                f"Time frames: Custom ({phase_count} phase(s))")
+            self.tf_status_label.setStyleSheet(
+                "color: #1565c0; font-size: 11px; font-weight: bold;")
+        else:
+            self.tf_status_label.setText("Time frames: Global")
+            self.tf_status_label.setStyleSheet("color: gray; font-size: 11px;")
+
     # --- Public getters ---
 
     def get_marked_ms(self) -> float:
@@ -422,6 +468,14 @@ class VideoPlayer(QWidget):
         if self.current_video_path:
             return os.path.basename(self.current_video_path)
         return ""
+
+    def get_current_frame(self):
+        """Return the current frame as a BGR numpy array, or None."""
+        if self.cap is None:
+            return None
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_num)
+        ret, frame = self.cap.read()
+        return frame if ret else None
 
     def cleanup(self):
         self._extract_token += 1  # invalidate any in-flight extraction

@@ -2,12 +2,14 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from typing import List
 from ..core.models import TimeFrame
 
 
 class TimeFrameEditor(QWidget):
+    changed = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
@@ -30,6 +32,7 @@ class TimeFrameEditor(QWidget):
             3, QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.itemChanged.connect(self.changed)
         layout.addWidget(self.table)
 
         btn_layout = QHBoxLayout()
@@ -56,11 +59,13 @@ class TimeFrameEditor(QWidget):
         self.table.setItem(row, 2, QTableWidgetItem("5"))
         self.table.setItem(row, 3, QTableWidgetItem(
             "{video}_{name}_{index:03d}"))
+        self.changed.emit()
 
     def _remove_selected(self):
         rows = set(idx.row() for idx in self.table.selectedIndexes())
         for row in sorted(rows, reverse=True):
             self.table.removeRow(row)
+        self.changed.emit()
 
     def get_time_frames(self) -> List[TimeFrame]:
         frames = []

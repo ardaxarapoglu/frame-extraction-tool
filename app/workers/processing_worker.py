@@ -9,10 +9,12 @@ class ProcessingWorker(QThread):
     finished_processing = pyqtSignal()
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, config: ProjectConfig, single_video=None, parent=None):
+    def __init__(self, config: ProjectConfig, single_video=None,
+                 selected_videos=None, parent=None):
         super().__init__(parent)
         self.config = copy.deepcopy(config)
         self.single_video = single_video
+        self.selected_videos = selected_videos  # List[str] or None
         self._cancelled = False
 
     def run(self):
@@ -24,6 +26,8 @@ class ProcessingWorker(QThread):
             )
             if self.single_video:
                 processor.process_single(self.single_video)
+            elif self.selected_videos is not None:
+                processor.process_selected(self.selected_videos)
             else:
                 processor.process_all()
         except Exception as e:
