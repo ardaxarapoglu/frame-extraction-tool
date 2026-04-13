@@ -1,7 +1,7 @@
 import numpy as np
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QSplitter, QMessageBox, QTabWidget, QDialog
+    QSplitter, QMessageBox, QTabWidget
 )
 from PyQt5.QtCore import Qt
 
@@ -11,7 +11,6 @@ from .widgets.crop_rotate_widget import CropRotateWidget
 from .widgets.progress_panel import ProgressPanel
 from .widgets.debug_panel import DebugPanel
 from .workers.processing_worker import ProcessingWorker
-from .dialogs.obstruction_test_dialog import ObstructionTestDialog
 from .core.models import ProjectConfig, CropRegion
 
 
@@ -95,10 +94,6 @@ class MainWindow(QMainWindow):
         self.settings_panel.process_single_requested.connect(
             self._start_processing_single)
 
-        # Test obstruction
-        self.settings_panel.test_obstruction_requested.connect(
-            self._test_obstruction)
-
         # Cancel
         self.progress_panel.cancel_requested.connect(self._cancel_processing)
 
@@ -119,21 +114,6 @@ class MainWindow(QMainWindow):
 
     def _on_crop_applied(self, region: CropRegion):
         self.config.crop_region = region
-
-    def _test_obstruction(self):
-        cap = self.video_player.cap
-        if cap is None or not cap.isOpened():
-            QMessageBox.warning(self, "No Video",
-                                "Open a video first.")
-            return
-
-        sensitivity = self.settings_panel.get_sensitivity()
-        dlg = ObstructionTestDialog(
-            cap, self.config.crop_region, sensitivity, self)
-        if dlg.exec_() == QDialog.Accepted:
-            new_sens = dlg.get_sensitivity()
-            self.settings_panel.sensitivity_slider.setValue(
-                int(new_sens * 100))
 
     def _start_processing_single(self):
         video_name = self.video_player.get_current_video_name()
