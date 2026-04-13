@@ -186,9 +186,18 @@ class MainWindow(QMainWindow):
         self.video_player.set_timeframes_status(
             bool(custom_tfs), len(custom_tfs) if custom_tfs else 0)
 
+        # Set up the crop-tab time slider for this video
+        start_ms = (self._vdc.get_video_start_ms(video_name)
+                    or self.config.experiment_start_ms)
+        self.crop_widget.set_video(
+            self.video_player.current_video_path,
+            self.video_player.fps,
+            self.video_player.total_frames,
+            start_ms)
+
         # Restore saved crop region into config and crop widget
         saved_crop = self._vdc.get_video_crop_region(video_name)
-        self.config.crop_region = saved_crop  # None is fine — means no crop
+        self.config.crop_region = saved_crop
         if saved_crop:
             frame = self.video_player.get_current_frame()
             if frame is not None:
@@ -345,6 +354,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._save_config()  # flush any pending save
         self.video_player.cleanup()
+        self.crop_widget.cleanup()
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
             self.worker.wait(3000)
