@@ -1,3 +1,3 @@
 ```pip install -r requirements.txt``` to install prerequisites.
 
-also install ffmpeg
+```winget install Gyan.FFmpeg``` to install ffmpeg for audio playback.
