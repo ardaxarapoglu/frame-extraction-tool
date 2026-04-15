@@ -32,6 +32,8 @@ class ProjectConfig:
     obstruction_enabled: bool = True
     obstruction_sensitivity: float = 0.35
     save_unfiltered: bool = False
+    filter_manually: bool = False
+    normal_distribution_mode: bool = False
     per_video_start: bool = False
     video_start_marks: dict = field(default_factory=dict)
     # Per-video custom time frames: {video_filename: List[TimeFrame]}

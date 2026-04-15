@@ -49,6 +49,10 @@ class SettingsPanel(QWidget):
         tf_layout = QVBoxLayout(tf_group)
         self.time_frame_editor = TimeFrameEditor()
         tf_layout.addWidget(self.time_frame_editor)
+        self.normal_dist_check = QCheckBox(
+            "Normal distribution mode  "
+            "(sample frames weighted toward the centre of each time frame)")
+        tf_layout.addWidget(self.normal_dist_check)
         layout.addWidget(tf_group)
 
         # Obstruction detection
@@ -143,7 +147,13 @@ class SettingsPanel(QWidget):
         # Debug: save unfiltered + filtered frames
         self.save_unfiltered_check = QCheckBox(
             "Save all frames before obstruction filtering (debug)")
+        self.save_unfiltered_check.toggled.connect(self._on_save_unfiltered_toggled)
         layout.addWidget(self.save_unfiltered_check)
+
+        self.filter_manually_check = QCheckBox(
+            "    Filter manually (create _manually-filtered folder)")
+        self.filter_manually_check.setEnabled(False)
+        layout.addWidget(self.filter_manually_check)
 
         layout.addStretch()
 
@@ -168,6 +178,14 @@ class SettingsPanel(QWidget):
         save_unf = vdc.get("save_unfiltered")
         if save_unf is not None:
             self.save_unfiltered_check.setChecked(save_unf)
+
+        filter_manually = vdc.get("filter_manually")
+        if filter_manually is not None:
+            self.filter_manually_check.setChecked(filter_manually)
+
+        normal_dist = vdc.get("normal_distribution_mode")
+        if normal_dist is not None:
+            self.normal_dist_check.setChecked(normal_dist)
 
         per_video = vdc.get("per_video_start")
         if per_video is not None:
@@ -201,6 +219,18 @@ class SettingsPanel(QWidget):
 
     def is_save_unfiltered(self) -> bool:
         return self.save_unfiltered_check.isChecked()
+
+    def is_normal_dist(self) -> bool:
+        return self.normal_dist_check.isChecked()
+
+    def is_filter_manually(self) -> bool:
+        return (self.save_unfiltered_check.isChecked()
+                and self.filter_manually_check.isChecked())
+
+    def _on_save_unfiltered_toggled(self, enabled: bool):
+        self.filter_manually_check.setEnabled(enabled)
+        if not enabled:
+            self.filter_manually_check.setChecked(False)
 
     def is_per_video(self) -> bool:
         return self.per_video_check.isChecked()

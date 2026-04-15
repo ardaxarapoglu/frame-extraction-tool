@@ -5,7 +5,7 @@ from typing import List, Callable, Optional, Tuple
 
 from .models import ProjectConfig, TimeFrame, CropRegion
 from .obstruction_detector import ObstructionDetector
-from .frame_selector import select_frames
+from .frame_selector import select_frames, select_frames_normal
 from .naming import generate_filename
 
 
@@ -166,10 +166,11 @@ class VideoProcessor:
                 for ui, uf in enumerate(cropped_frames):
                     if self.cancel_check():
                         break
-                    ts_s = timestamps[ui] / 1000.0 if ui < len(timestamps) else 0.0
+                    ts_ms = timestamps[ui] if ui < len(timestamps) else 0.0
+                    rel_s = (ts_ms - start_ms) / 1000.0
                     upath = os.path.join(
                         unfiltered_dir,
-                        f"{base}_{tf.name}_{ui + 1:04d}_{ts_s:.2f}s.png")
+                        f"{base}_{tf.name}_{ui + 1:04d}_{rel_s:.3f}s.png")
                     cv2.imwrite(upath, uf)
 
             if self.cancel_check():
@@ -212,11 +213,12 @@ class VideoProcessor:
                     for fi, frame_idx in enumerate(good_indices):
                         if self.cancel_check():
                             break
-                        ts_s = (timestamps[frame_idx] / 1000.0
-                                if frame_idx < len(timestamps) else 0.0)
+                        ts_ms = (timestamps[frame_idx]
+                                 if frame_idx < len(timestamps) else 0.0)
+                        rel_s = (ts_ms - start_ms) / 1000.0
                         fpath = os.path.join(
                             filtered_dir,
-                            f"{base}_{tf.name}_{fi + 1:04d}_{ts_s:.2f}s.png")
+                            f"{base}_{tf.name}_{fi + 1:04d}_{rel_s:.3f}s.png")
                         cv2.imwrite(fpath, cropped_frames[frame_idx])
 
                 if rejected_indices:
@@ -229,24 +231,31 @@ class VideoProcessor:
                     for ri, frame_idx in enumerate(rejected_indices):
                         if self.cancel_check():
                             break
-                        ts_s = (timestamps[frame_idx] / 1000.0
-                                if frame_idx < len(timestamps) else 0.0)
+                        ts_ms = (timestamps[frame_idx]
+                                 if frame_idx < len(timestamps) else 0.0)
+                        rel_s = (ts_ms - start_ms) / 1000.0
                         rpath = os.path.join(
                             rejected_dir,
-                            f"{base}_{tf.name}_{ri + 1:04d}_{ts_s:.2f}s.png")
+                            f"{base}_{tf.name}_{ri + 1:04d}_{rel_s:.3f}s.png")
                         cv2.imwrite(rpath, cropped_frames[frame_idx])
 
             if self.cancel_check():
                 break
 
-            # Select evenly spaced frames
-            selected = select_frames(good_indices, tf.num_frames)
-            if len(good_indices) > 0 and tf.num_frames > 0:
+            # Select frames — uniform or normal-distribution weighted
+            if self.config.normal_distribution_mode:
+                selected = select_frames_normal(good_indices, tf.num_frames)
+                self.progress_callback(0,
+                    f"  Selecting {len(selected)}/{tf.num_frames} requested "
+                    f"frames (normal distribution, peak at centre of clip)")
+            elif len(good_indices) > 0 and tf.num_frames > 0:
+                selected = select_frames(good_indices, tf.num_frames)
                 interval = len(good_indices) / max(tf.num_frames, 1)
                 self.progress_callback(0,
                     f"  Selecting {len(selected)}/{tf.num_frames} requested "
-                    f"frames (interval: every {interval:.1f} good frames)")
+                    f"frames (uniform, interval: every {interval:.1f} good frames)")
             else:
+                selected = select_frames(good_indices, tf.num_frames)
                 self.progress_callback(0,
                     f"  No frames available to select")
 
@@ -255,7 +264,7 @@ class VideoProcessor:
 
             # Save frames
             self._save_frames(cropped_frames, selected, timestamps,
-                              video_filename, tf)
+                              video_filename, tf, start_ms)
 
             current_ms += tf.duration_seconds * 1000
 
@@ -379,12 +388,13 @@ class VideoProcessor:
         return cv2.warpAffine(frame, M, (new_w, new_h))
 
     def _save_frames(self, frames: List[np.ndarray], selected_indices: List[int],
-                     timestamps: List[float], video_filename: str, tf: TimeFrame):
+                     timestamps: List[float], video_filename: str, tf: TimeFrame,
+                     start_ms: float = 0.0):
         video_base = os.path.splitext(video_filename)[0]
         out_dir = os.path.join(
             self.config.output_directory, video_base, tf.name)
         os.makedirs(out_dir, exist_ok=True)
-        if self.config.save_unfiltered:
+        if self.config.save_unfiltered and self.config.filter_manually:
             os.makedirs(os.path.join(out_dir, "_manually-filtered"), exist_ok=True)
         self.progress_callback(0, f"  Saving to: {out_dir}")
 
@@ -394,14 +404,16 @@ class VideoProcessor:
                 return
             if frame_idx < len(frames):
                 ts = timestamps[frame_idx] if frame_idx < len(timestamps) else 0.0
+                rel_s = (ts - start_ms) / 1000.0
                 filename = generate_filename(
-                    tf.naming_scheme, video_filename, tf.name, save_idx, ts)
+                    tf.naming_scheme, video_filename, tf.name, save_idx, ts,
+                    rel_time_s=rel_s)
                 filepath = os.path.join(out_dir, filename)
                 cv2.imwrite(filepath, frames[frame_idx])
                 h, w = frames[frame_idx].shape[:2]
                 self.progress_callback(0,
                     f"    [{save_idx + 1}/{len(selected_indices)}] "
-                    f"{filename} ({w}x{h}, t={ts / 1000:.2f}s)")
+                    f"{filename} ({w}x{h}, t={rel_s:.3f}s from start)")
 
         self.progress_callback(0,
             f"  Saved {len(selected_indices)} frames for '{tf.name}'")

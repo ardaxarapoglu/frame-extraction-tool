@@ -113,7 +113,11 @@ class MainWindow(QMainWindow):
             self._schedule_save)
         self.settings_panel.sensitivity_slider.valueChanged.connect(
             self._schedule_save)
+        self.settings_panel.normal_dist_check.toggled.connect(
+            self._schedule_save)
         self.settings_panel.save_unfiltered_check.toggled.connect(
+            self._schedule_save)
+        self.settings_panel.filter_manually_check.toggled.connect(
             self._schedule_save)
         self.settings_panel.per_video_check.toggled.connect(
             self._schedule_save)
@@ -137,8 +141,12 @@ class MainWindow(QMainWindow):
                       self.settings_panel.is_obstruction_enabled())
         self._vdc.set("obstruction_sensitivity",
                       self.settings_panel.get_sensitivity())
+        self._vdc.set("normal_distribution_mode",
+                      self.settings_panel.is_normal_dist())
         self._vdc.set("save_unfiltered",
                       self.settings_panel.is_save_unfiltered())
+        self._vdc.set("filter_manually",
+                      self.settings_panel.is_filter_manually())
         self._vdc.set("per_video_start",
                       self.settings_panel.is_per_video())
         self._vdc.save()
@@ -323,7 +331,9 @@ class MainWindow(QMainWindow):
             self.settings_panel.is_obstruction_enabled()
         self.config.obstruction_sensitivity = \
             self.settings_panel.get_sensitivity()
+        self.config.normal_distribution_mode = self.settings_panel.is_normal_dist()
         self.config.save_unfiltered = self.settings_panel.is_save_unfiltered()
+        self.config.filter_manually = self.settings_panel.is_filter_manually()
         self.config.per_video_start = self.settings_panel.is_per_video()
 
         self.progress_panel.clear_log()

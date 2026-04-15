@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QSlider, QSizePolicy, QComboBox
@@ -48,6 +49,10 @@ class VideoPlayer(QWidget):
         self._muted = False
         self._temp_audio = None # path to temp mp3
         self._extract_token = 0 # cancels stale extractions
+
+        # Clock-based sync state
+        self._play_start_time = 0.0
+        self._play_start_frame = 0
 
         if HAS_AUDIO:
             self._audio_ready.connect(self._on_audio_ready)
@@ -334,11 +339,15 @@ class VideoPlayer(QWidget):
         self.is_playing = True
         self.btn_play.setText("Pause")
         interval = max(1, int(1000 / self.fps))
-        self.timer.start(interval)
 
         if HAS_AUDIO and self._audio_loaded:
             start_s = self.current_frame_num / self.fps
             pygame.mixer.music.play(start=start_s)
+
+        # Record wall-clock start *after* audio play() to minimise the gap
+        self._play_start_time = time.perf_counter()
+        self._play_start_frame = self.current_frame_num
+        self.timer.start(interval)
 
     def _stop(self):
         self.is_playing = False
@@ -351,6 +360,17 @@ class VideoPlayer(QWidget):
         if self.cap is None:
             self._stop()
             return
+
+        # Clock-based sync: compute which frame should be showing right now
+        elapsed = time.perf_counter() - self._play_start_time
+        expected_frame = int(self._play_start_frame + elapsed * self.fps)
+        expected_frame = min(expected_frame, self.total_frames - 1)
+
+        # If the timer fired late, skip ahead to catch up with the audio clock
+        if expected_frame > self.current_frame_num + 1:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, expected_frame)
+            self.current_frame_num = expected_frame
+
         ret, frame = self.cap.read()
         if ret:
             self.current_frame_num = int(
