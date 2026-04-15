@@ -314,8 +314,13 @@ class VideoPlayer(QWidget):
         self.seek_slider.blockSignals(False)
         current_ms = (self.current_frame_num / self.fps) * 1000
         total_ms = (self.total_frames / self.fps) * 1000
+        if self.marked_ms is not None:
+            exp_ms = current_ms - self.marked_ms
+            exp_str = f"  |  exp: {self._format_time(exp_ms)}"
+        else:
+            exp_str = "  |  exp: —"
         self.time_label.setText(
-            f"{self._format_time(current_ms)} / {self._format_time(total_ms)}")
+            f"{self._format_time(current_ms)} / {self._format_time(total_ms)}{exp_str}")
 
     def _format_time(self, ms: float) -> str:
         if ms < 0:
