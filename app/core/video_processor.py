@@ -105,8 +105,11 @@ class VideoProcessor:
         self.progress_callback(0,
             f"  Experiment start: {start_ms / 1000:.2f}s")
 
-        if self.config.crop_region:
-            cr = self.config.crop_region
+        crop_region = (self.config.video_crop_regions.get(video_filename)
+                       or self.config.crop_region)
+
+        if crop_region:
+            cr = crop_region
             persp_info = ""
             if cr.perspective_x != 0 or cr.perspective_y != 0:
                 persp_info = (f", perspective ({cr.perspective_x:.1f}°, "
@@ -136,7 +139,7 @@ class VideoProcessor:
                 f"  Streaming frames...")
             cropped_frames, guard_regions, timestamps = self._stream_clip(
                 cap, fps, current_ms, tf.duration_seconds,
-                skip_first=(tf_idx > 0))
+                skip_first=(tf_idx > 0), crop_region=crop_region)
 
             if self.cancel_check():
                 break
@@ -154,9 +157,9 @@ class VideoProcessor:
                    f"{cropped_frames[0].shape[0]})"
                    if cropped_frames else ""))
 
-            # Save unfiltered frames for debugging
+            # Save unfiltered frames (only when manual filtering is enabled)
             base = os.path.splitext(video_filename)[0]
-            if self.config.save_unfiltered:
+            if self.config.filter_manually:
                 unfiltered_dir = os.path.join(
                     self.config.output_directory, base, tf.name, "_unfiltered")
                 os.makedirs(unfiltered_dir, exist_ok=True)
@@ -276,7 +279,7 @@ class VideoProcessor:
 
     def _stream_clip(self, cap: cv2.VideoCapture, fps: float,
                      start_ms: float, duration_s: float,
-                     skip_first: bool = False):
+                     skip_first: bool = False, crop_region=None):
         """Read frames one at a time, rotate+crop immediately, only keep
         the small cropped result. Never holds full-resolution frames in memory.
 
@@ -285,7 +288,7 @@ class VideoProcessor:
         cropped_frames) used for obstruction detection, or None when
         no crop region is set.
         """
-        crop = self.config.crop_region
+        crop = crop_region
         cropped_frames = []
         guard_regions = [] if crop else None
         timestamps = []
