@@ -168,9 +168,10 @@ class MainWindow(QMainWindow):
         finally:
             self._loading = False
 
-        # Restore all per-video start marks and custom time frames into config
+        # Restore all per-video start marks, time frames, and crop regions
         self.config.video_start_marks = self._vdc.get_all_video_start_marks()
         self.config.video_time_frames = self._vdc.get_all_custom_time_frames()
+        self.config.video_crop_regions = self._vdc.get_all_video_crop_regions()
 
         # Update the video player list and crop tab combo
         self.video_player.set_video_directory(directory)
@@ -243,11 +244,12 @@ class MainWindow(QMainWindow):
 
     def _on_crop_applied(self, region: CropRegion):
         self.config.crop_region = region
-        # Save per-video crop to config file
+        # Save per-video crop to config file and runtime dict
         video_name = self.video_player.get_current_video_name()
         if video_name and self._vdc.loaded:
             self._vdc.set_video_crop_region(video_name, region)
             self._vdc.save()
+            self.config.video_crop_regions[video_name] = region
 
     # ------------------------------------------------------------------ #
     # Per-video time frames

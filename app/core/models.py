@@ -38,3 +38,5 @@ class ProjectConfig:
     video_start_marks: dict = field(default_factory=dict)
     # Per-video custom time frames: {video_filename: List[TimeFrame]}
     video_time_frames: dict = field(default_factory=dict)
+    # Per-video crop regions: {video_filename: CropRegion}
+    video_crop_regions: dict = field(default_factory=dict)

@@ -145,6 +145,16 @@ class VideoDirectoryConfig:
                 "perspective_y": region.perspective_y,
             }
 
+    def get_all_video_crop_regions(self) -> dict:
+        """Return {video_filename: CropRegion} for every video that has one saved."""
+        result = {}
+        for name, vdata in self._data.get("videos", {}).items():
+            if vdata.get("crop_region") is not None:
+                region = self.get_video_crop_region(name)
+                if region is not None:
+                    result[name] = region
+        return result
+
     def get_all_custom_time_frames(self) -> Dict[str, List[TimeFrame]]:
         result: Dict[str, List[TimeFrame]] = {}
         for name, vdata in self._data.get("videos", {}).items():
